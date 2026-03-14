@@ -6,3 +6,4 @@ description = "XML wrapper for Stormworks component and/or vehicle definitions."
 license = "MIT"
 
 [dependencies]
+quick-xml = "0.39.2"

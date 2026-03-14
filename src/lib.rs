@@ -1,10 +1,23 @@
-use std::{io, path::Path};
+mod domtree;
 
-pub struct ComponentDefinition;
+use domtree::Document;
+use quick_xml::Reader;
+use std::{io::BufRead, path::Path};
+
+#[derive(Clone, Debug)]
+pub struct ComponentDefinition {
+    tree: Document,
+}
 
 impl ComponentDefinition {
-    pub fn load<P: AsRef<Path>>(_path: P) -> Result<Self, io::Error> {
-        Ok(Self)
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, quick_xml::Error> {
+        let mut reader = Reader::from_file(path)?;
+        Self::from_reader(&mut reader)
+    }
+
+    fn from_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, quick_xml::Error> {
+        let tree = domtree::Document::from_reader(reader)?;
+        Ok(Self { tree })
     }
 }
 
@@ -22,8 +35,8 @@ mod tests {
         for entry in std::fs::read_dir(&definitions_dir)
             .unwrap_or_else(|e| panic!("failed to read dir {definitions_dir:?}: {e}"))
         {
-            let entry =
-                entry.unwrap_or_else(|e| panic!("failed to read entry in {definitions_dir:?}: {e}"));
+            let entry = entry
+                .unwrap_or_else(|e| panic!("failed to read entry in {definitions_dir:?}: {e}"));
             let path = entry.path();
             if path
                 .extension()
@@ -54,24 +67,26 @@ mod tests {
 
         std::thread::scope(|scope| {
             for _ in 0..worker_count {
-                scope.spawn(|| loop {
-                    if failed.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    let idx = next_index.fetch_add(1, Ordering::Relaxed);
-                    if idx >= xml_paths.len() {
-                        break;
-                    }
-
-                    let path = &xml_paths[idx];
-                    if let Err(e) = ComponentDefinition::load(path) {
-                        failed.store(true, Ordering::Relaxed);
-                        let mut guard = first_error.lock().expect("mutex poisoned");
-                        if guard.is_none() {
-                            *guard = Some((path.clone(), e.to_string()));
+                scope.spawn(|| {
+                    loop {
+                        if failed.load(Ordering::Relaxed) {
+                            break;
                         }
-                        break;
+
+                        let idx = next_index.fetch_add(1, Ordering::Relaxed);
+                        if idx >= xml_paths.len() {
+                            break;
+                        }
+
+                        let path = &xml_paths[idx];
+                        if let Err(e) = ComponentDefinition::load(path) {
+                            failed.store(true, Ordering::Relaxed);
+                            let mut guard = first_error.lock().expect("mutex poisoned");
+                            if guard.is_none() {
+                                *guard = Some((path.clone(), e.to_string()));
+                            }
+                            break;
+                        }
                     }
                 });
             }
