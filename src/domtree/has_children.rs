@@ -111,6 +111,34 @@ pub(crate) trait HasChildren {
             self.insert_child(index + 1, Node::Element(element));
         }
     }
+    fn push_element(&mut self, element: Element) -> usize {
+        let children = self.children();
+        let i = children
+            .iter()
+            .rev()
+            .enumerate()
+            .find_map(|(i, child)| matches!(child, Node::Element(_)).then_some(i))
+            .map(|i| children.len() - 1 - i);
+        if let Some(i) = i {
+            self.insert_element_after(i, element);
+            i
+        } else {
+            self.children_mut().push(Node::Element(element));
+            self.children().len() - 1
+        }
+    }
+
+    fn ensure_element<K: AsRef<[u8]>>(&mut self, name: K) -> (&mut Element, usize) {
+        let i = self
+            .children()
+            .iter()
+            .position(|n| matches!(n, Node::Element(e) if e.name == name.as_ref()));
+        let i = i.unwrap_or_else(|| self.push_element(Element::new_empty(name)));
+        match self.get_child_mut(i) {
+            Some(Node::Element(e)) => (e, i),
+            _ => unreachable!(),
+        }
+    }
 }
 
 fn node_trailing_whitespaces(leading_node: &Node) -> Option<Vec<u8>> {

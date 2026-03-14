@@ -183,8 +183,11 @@ mod tests {
 
         test_helper(xml, xml, |doc| {
             if let Some(Node::Element(el)) = doc.root.first() {
-                assert_eq!(el.attributes.get("1a"), Some("v".to_owned()));
-                assert_eq!(el.attributes.get("b"), Some("line1\nline2&hoge".to_owned()));
+                assert_eq!(el.attributes.get_unescaped("1a"), Some("v".to_owned()));
+                assert_eq!(
+                    el.attributes.get_unescaped("b"),
+                    Some("line1\nline2&hoge".to_owned())
+                );
             } else {
                 panic!("cannot get root element")
             }
@@ -203,7 +206,7 @@ mod tests {
                 let (_, i) = root
                     .single_element_by_name("child")
                     .expect("cannot get <child>");
-                root.insert_element_before(i, Element::new_empty(b"child2".into()));
+                root.insert_element_before(i, Element::new_empty("child2"));
             },
         );
     }
@@ -225,7 +228,7 @@ mod tests {
                 let (_, i) = root
                     .single_element_by_name("child")
                     .expect("cannot get <child>");
-                root.insert_element_before(i, Element::new_empty(b"child2".into()));
+                root.insert_element_before(i, Element::new_empty("child2"));
             },
         );
     }
@@ -242,7 +245,7 @@ mod tests {
                 let (_, i) = root
                     .single_element_by_name("child")
                     .expect("cannot get <child>");
-                root.insert_element_after(i, Element::new_empty(b"child2".into()));
+                root.insert_element_after(i, Element::new_empty("child2"));
             },
         );
     }
@@ -264,7 +267,7 @@ mod tests {
                 let (_, i) = root
                     .single_element_by_name("child")
                     .expect("cannot get <child>");
-                root.insert_element_after(i, Element::new_empty(b"child2".into()));
+                root.insert_element_after(i, Element::new_empty("child2"));
             },
         );
     }
@@ -309,12 +312,64 @@ mod tests {
     }
 
     #[test]
+    fn push_element() {
+        test_helper(
+            concat!("<root>\n", "  <child>inner</child>\n", "</root>\n",),
+            concat!(
+                "<root>\n",
+                "  <child>inner</child>\n",
+                "  <child2 />\n",
+                "</root>\n",
+            ),
+            |doc| {
+                let (root, _) = doc
+                    .single_element_by_name_mut("root")
+                    .expect("cannot get <root>");
+                root.push_element(Element::new_empty("child2"));
+            },
+        );
+    }
+
+    #[test]
+    fn ensure_element_2() {
+        test_helper(
+            concat!("<root>\n", "  <child>inner</child>\n", "</root>\n",),
+            concat!("<root>\n", "  <child>inner</child>\n", "</root>\n",),
+            |doc| {
+                let (root, _) = doc
+                    .single_element_by_name_mut("root")
+                    .expect("cannot get <root>");
+                root.ensure_element("child");
+            },
+        );
+    }
+
+    #[test]
+    fn ensure_element_1() {
+        test_helper(
+            concat!("<root>\n", "  <child>inner</child>\n", "</root>\n",),
+            concat!(
+                "<root>\n",
+                "  <child>inner</child>\n",
+                "  <child2 />\n",
+                "</root>\n",
+            ),
+            |doc| {
+                let (root, _) = doc
+                    .single_element_by_name_mut("root")
+                    .expect("cannot get <root>");
+                root.ensure_element("child2");
+            },
+        );
+    }
+
+    #[test]
     fn update_attribute() {
         test_helper("<root abc=\"def\" />", "<root abc=\"ghi\" />", |doc| {
             let (root, _) = doc
                 .single_element_by_name_mut("root")
                 .expect("cannot get <root>");
-            root.attributes.set("abc", "ghi");
+            root.attributes.set_unescaped("abc", "ghi");
         });
     }
 
@@ -327,7 +382,7 @@ mod tests {
                 let (root, _) = doc
                     .single_element_by_name_mut("root")
                     .expect("cannot get <root>");
-                root.attributes.set("123", "456");
+                root.attributes.set_unescaped("123", "456");
             },
         );
     }
@@ -342,7 +397,7 @@ mod tests {
                 .attributes
                 .remove("abc")
                 .expect("cannot remove attribute `abc`");
-            assert_eq!(abc.get_value(), "def");
+            assert_eq!(abc.get_unescaped(), "def");
         });
     }
 }
