@@ -1,5 +1,8 @@
-use super::utils::{debug_utf8, escape_xml, leading_whitespaces, unescape_xml};
-use std::{fmt::Debug, io::Write};
+use super::{
+    error::AttrError,
+    utils::{debug_utf8, escape_xml, leading_whitespaces, unescape_xml},
+};
+use std::{fmt::Debug, io::Write, str::FromStr};
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Attributes {
@@ -41,18 +44,18 @@ impl Attributes {
         }
     }
 
-    pub(crate) fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<String> {
+    pub(crate) fn get_unescaped<K: AsRef<[u8]>>(&self, key: K) -> Option<String> {
         let key = key.as_ref();
         self.slots
             .iter()
             .find(|slot| slot.key == key)
-            .map(|slot| slot.get_value())
+            .map(|slot| slot.get_unescaped())
     }
 
-    pub(crate) fn set<K: AsRef<[u8]>>(&mut self, key: K, value: &str) {
+    pub(crate) fn set_unescaped<K: AsRef<[u8]>>(&mut self, key: K, value: &str) {
         let key = key.as_ref();
         if let Some(slot) = self.slots.iter_mut().find(|slot| slot.key == key) {
-            slot.set_value(value.as_bytes());
+            slot.set_unescaped(value.as_bytes());
             return;
         }
 
@@ -75,6 +78,24 @@ impl Attributes {
             quote,
             value: escaped_value,
         });
+    }
+
+    pub(crate) fn get<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
+    where
+        T: FromStr<Err = E>,
+        AttrError: From<E>,
+    {
+        let key = key.as_ref();
+        if let Some(r) = self
+            .slots
+            .iter()
+            .find(|slot| slot.key == key)
+            .map(|slot| T::from_str(&unescape_xml(&slot.value)))
+        {
+            Ok(r?)
+        } else {
+            Err(AttrError::NotFound(key.as_ref().into()))
+        }
     }
 
     pub(crate) fn remove<K: AsRef<[u8]>>(&mut self, key: K) -> Option<AttrSlot> {
@@ -131,10 +152,10 @@ impl Debug for AttrSlot {
 }
 
 impl AttrSlot {
-    pub(crate) fn get_value(&self) -> String {
+    pub(crate) fn get_unescaped(&self) -> String {
         unescape_xml(&self.value)
     }
-    pub(crate) fn set_value(&mut self, value: &[u8]) {
+    pub(crate) fn set_unescaped(&mut self, value: &[u8]) {
         let (escaped_value, quote) = escape_xml(value);
         self.value = escaped_value;
         self.quote = quote;

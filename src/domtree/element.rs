@@ -1,5 +1,7 @@
-use super::{Node, attributes::Attributes, has_children::HasChildren, utils::debug_utf8};
-use std::fmt::Debug;
+use super::{
+    Node, attributes::Attributes, error::AttrError, has_children::HasChildren, utils::debug_utf8,
+};
+use std::{fmt::Debug, str::FromStr};
 
 #[derive(PartialEq, Eq, Clone)]
 pub(crate) struct Element {
@@ -30,9 +32,9 @@ impl Debug for Element {
 }
 
 impl Element {
-    pub(crate) fn new_empty(name: Vec<u8>) -> Self {
+    pub(crate) fn new_empty<K: AsRef<[u8]>>(name: K) -> Self {
         Self {
-            name,
+            name: name.as_ref().into(),
             attributes: Attributes::default(),
             children: Vec::new(),
             is_self_closing: true,
@@ -49,6 +51,14 @@ impl Element {
             children: Vec::new(),
             is_self_closing,
         }
+    }
+
+    pub(crate) fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
+    where
+        T: FromStr<Err = E>,
+        AttrError: From<E>,
+    {
+        self.attributes.get(key)
     }
 
     pub(crate) fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {

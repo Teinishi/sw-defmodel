@@ -1,5 +1,6 @@
 mod attributes;
 mod element;
+mod error;
 mod has_children;
 mod node;
 mod utils;
@@ -179,15 +180,12 @@ mod tests {
         // 多少 malformed でも受け入れてほしいケース:
         // - 数字で始まる属性名
         // - 改行を含む属性値
-        let xml = "<root 1a=\"v\" b=\"line1\nline2&amp;hoge\"></root>";
+        let xml = "<root 123=\"456\" b=\"line1\nline2&amp;hoge\"></root>";
 
         test_helper(xml, xml, |doc| {
             if let Some(Node::Element(el)) = doc.root.first() {
-                assert_eq!(el.attributes.get_unescaped("1a"), Some("v".to_owned()));
-                assert_eq!(
-                    el.attributes.get_unescaped("b"),
-                    Some("line1\nline2&hoge".to_owned())
-                );
+                assert_eq!(el.attr("123"), Ok(456));
+                assert_eq!(el.attr("b"), Ok("line1\nline2&hoge".to_owned()));
             } else {
                 panic!("cannot get root element")
             }
