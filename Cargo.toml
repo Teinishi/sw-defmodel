@@ -1,5 +1,5 @@
 [package]
-name = "sw_defmodel"
+name = "sw-defmodel"
 version = "0.1.0"
 edition = "2024"
 description = "XML wrapper for Stormworks component and/or vehicle definitions."

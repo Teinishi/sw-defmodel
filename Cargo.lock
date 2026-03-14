@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "sw_defmodel"
+name = "sw-defmodel"
 version = "0.1.0"
