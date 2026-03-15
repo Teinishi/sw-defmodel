@@ -1,4 +1,5 @@
-use super::{Element, Node, utils::trailing_whitespaces};
+use super::{Element, Node};
+use crate::utils::trailing_whitespaces;
 
 pub trait HasChildren {
     fn children(&self) -> &Vec<Node>;

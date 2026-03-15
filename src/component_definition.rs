@@ -1,11 +1,13 @@
+mod definition;
 mod surfaces;
 
 use crate::{
-    domtree::{Document, Element, HasAttr, HasAttrMut, error::AttrError},
-    helpers::List,
+    domtree::{Document, Element, HasChildren, HasChildrenMut},
+    helpers::ListItem,
 };
+pub use definition::Definition;
 use quick_xml::Reader;
-use std::{fmt::Display, io::BufRead, path::Path, str::FromStr};
+use std::{io::BufRead, path::Path};
 pub use surfaces::{Surface, SurfaceOrientation};
 
 #[derive(Clone, Debug)]
@@ -14,60 +16,67 @@ pub struct ComponentDefinition {
 }
 
 impl ComponentDefinition {
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, quick_xml::Error> {
-        let mut reader = Reader::from_file(path)?;
-        Self::from_reader(&mut reader)
+    pub fn from_xml_str(s: &str) -> Result<Self, quick_xml::Error> {
+        Ok(Self {
+            tree: Document::from_xml_str(s)?,
+        })
     }
 
-    fn from_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, quick_xml::Error> {
-        let tree = Document::from_xml_reader(reader)?;
-        Ok(Self { tree })
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, quick_xml::Error> {
+        Ok(Self {
+            tree: Document::from_file(path)?,
+        })
     }
 
-    fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Option<T>
-    where
-        T: FromStr<Err = E>,
-        AttrError: From<E>,
-    {
+    pub fn from_xml_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, quick_xml::Error> {
+        Ok(Self {
+            tree: Document::from_xml_reader(reader)?,
+        })
+    }
+
+    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.tree.write(writer)
+    }
+
+    pub fn to_bytes(&self) -> std::io::Result<Vec<u8>> {
+        self.tree.to_bytes()
+    }
+
+    pub fn definition(&self) -> Option<Definition<&Element>> {
         self.tree
-            .find(&["definition"])
-            .and_then(|el| el.attr(key).ok())
-    }
-    fn set_attr<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T) {
-        self.tree
-            .find_ensure("definition", &[])
-            .set_attr(key, value);
+            .single_element_by_name(Definition::<&Element>::NAME)
+            .map(|(el, _)| Definition::from_element(el))
     }
 
-    pub fn name(&self) -> Option<String> {
-        self.attr("name")
-    }
-    pub fn set_name(&mut self, value: String) {
-        self.set_attr("name", value);
-    }
-
-    pub fn surfaces(&self) -> Option<List<&Element, Surface<&Element>>> {
-        self.tree.find(&["definition", "surfaces"]).map(List::new)
-    }
-    pub fn surfaces_mut(&mut self) -> List<&mut Element, Surface<&mut Element>> {
-        let surfaces = self.tree.find_ensure("definitions", &["surfaces"]);
-        List::new(surfaces)
-    }
-
-    pub fn buoyancy_surfaces(&self) -> Option<List<&Element, Surface<&Element>>> {
-        self.tree
-            .find(&["definition", "buoyancy_surfaces"])
-            .map(List::new)
-    }
-    pub fn buoyancy_surfaces_mut(&mut self) -> List<&mut Element, Surface<&mut Element>> {
-        let surfaces = self.tree.find_ensure("definitions", &["buoyancy_surfaces"]);
-        List::new(surfaces)
+    pub fn definition_mut(&mut self) -> Definition<&mut Element> {
+        let (el, _) = self.tree.ensure_element(Definition::<&mut Element>::NAME);
+        Definition::from_element(el)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mutation_test_helper<F>(input: &str, expected: &str, callback: F)
+    where
+        F: FnOnce(&mut Definition<&mut Element>),
+    {
+        let mut cd = ComponentDefinition::from_xml_str(input).expect("failed to parse");
+        let mut definition = cd.definition_mut();
+
+        callback(&mut definition);
+
+        let out = cd.to_bytes().expect("write failed");
+        if out != expected.as_bytes() {
+            panic!(
+                "assertion `out == expected` failed\nout:\n{}\nexpected:\n{}",
+                crate::utils::debug_utf8(&out),
+                expected
+            );
+        }
+        assert_eq!(out, expected.as_bytes());
+    }
 
     #[test]
     fn read() {
@@ -82,10 +91,12 @@ mod tests {
         ];
 
         for (filename, name) in items {
-            let definition = ComponentDefinition::load(definitions_dir.join(filename))
+            let cd = ComponentDefinition::from_file(definitions_dir.join(filename))
                 .expect("failed to load {filename:?}");
+            let definition = cd.definition().expect("failed to get <definition>");
 
-            assert_eq!(definition.name(), Some(name.to_owned()));
+            assert_eq!(definition.name(), Ok(name.to_owned()));
+            definition.category().expect("failed to get category");
 
             if let Some(surfaces) = definition.surfaces() {
                 for surface in surfaces.iter() {
@@ -104,6 +115,54 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn list_mutation() {
+        mutation_test_helper(
+            concat!(
+                "<definition>\n",
+                "  <surfaces>\n",
+                "    <surface orientation=\"0\" />\n",
+                "    <surface orientation=\"1\" />\n",
+                "    <surface orientation=\"2\" />\n",
+                "    <surface orientation=\"3\" />\n",
+                "    <surface orientation=\"4\" />\n",
+                "    <surface orientation=\"5\" />\n",
+                "  </surfaces>\n",
+                "</definition>\n"
+            ),
+            concat!(
+                "<definition>\n",
+                "  <surfaces>\n",
+                "    <surface orientation=\"5\" />\n",
+                "    <surface orientation=\"4\" />\n",
+                "    <surface orientation=\"3\" />\n",
+                "    <surface orientation=\"2\" />\n",
+                "    <surface orientation=\"1\" />\n",
+                "    <surface orientation=\"0\" />\n",
+                "  </surfaces>\n",
+                "</definition>\n"
+            ),
+            |definition| {
+                let mut surfaces = definition.surfaces_mut();
+                for mut surface in surfaces.iter_mut() {
+                    let new_orientation = match surface
+                        .orientation()
+                        .expect("failed to get orientation")
+                    {
+                        SurfaceOrientation::XPos => SurfaceOrientation::ZNeg,
+                        SurfaceOrientation::XNeg => SurfaceOrientation::ZPos,
+                        SurfaceOrientation::YPos => SurfaceOrientation::YNeg,
+                        SurfaceOrientation::YNeg => SurfaceOrientation::YPos,
+                        SurfaceOrientation::ZPos => SurfaceOrientation::XNeg,
+                        SurfaceOrientation::ZNeg => SurfaceOrientation::XPos,
+                        SurfaceOrientation::Unknown(_) => panic!("unexpected surface orientation"),
+                    };
+                    surface.set_orientation(new_orientation);
+                }
+            },
+        );
     }
 
     #[test]
@@ -160,7 +219,7 @@ mod tests {
                         }
 
                         let path = &xml_paths[idx];
-                        if let Err(e) = ComponentDefinition::load(path) {
+                        if let Err(e) = ComponentDefinition::from_file(path) {
                             failed.store(true, Ordering::Relaxed);
                             let mut guard = first_error.lock().expect("mutex poisoned");
                             if guard.is_none() {

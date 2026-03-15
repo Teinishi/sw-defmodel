@@ -1,6 +1,5 @@
-use super::{
-    HasChildren, HasChildrenMut, Node, attributes::Attributes, error::AttrError, utils::debug_utf8,
-};
+use super::{HasChildren, HasChildrenMut, Node, attributes::Attributes, error::AttrError};
+use crate::utils::debug_utf8;
 use std::{
     fmt::{Debug, Display},
     str::FromStr,

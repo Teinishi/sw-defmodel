@@ -1,7 +1,5 @@
-use super::{
-    error::AttrError,
-    utils::{debug_utf8, escape_xml, leading_whitespaces, unescape_xml},
-};
+use super::error::AttrError;
+use crate::utils::{debug_utf8, escape_xml, leading_whitespaces, unescape_xml};
 use std::{
     fmt::{Debug, Display},
     io::Write,

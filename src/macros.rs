@@ -47,10 +47,10 @@ macro_rules! element_wrapper {
             }
         }
 
-        element_wrapper!(@impl $name, $($body)*);
+        element_wrapper!(@impl $name { $($body)* });
     };
 
-    (@impl $name:ident, $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)?) => {
+    (@impl $name:ident { $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)? }) => {
         // 基本形 "attr_name" => attr_ident: attr_type
         impl<E: $crate::domtree::HasAttr> $name<E> {
             pub fn $attr_ident(&self) -> ::core::result::Result<$attr_type, $crate::domtree::error::AttrError> {
@@ -67,20 +67,61 @@ macro_rules! element_wrapper {
         }
 
         // 残りがあれば再帰的に処理
-        $(element_wrapper!(@impl $name, $($rest)*);)?
+        $(element_wrapper!(@impl $name { $($rest)* });)?
     };
 
-    (@impl $name:ident, $attr_name:literal : $attr_type:ty $(, $($rest:tt)*)?) => {
+    (@impl $name:ident { $attr_name:literal : $attr_type:ty $(, $($rest:tt)*)? }) => {
         // 省略形 "attr_name": attr_type
         ::paste::paste! {
-            // 文字列 $key をそのまま識別子として扱う
-            element_wrapper!(@impl $name, $attr_name => [<$attr_name>]: $attr_type);
+            // 文字列 $attr_name をそのまま識別子として扱う
+            element_wrapper!(@impl $name { $attr_name => [<$attr_name>] : $attr_type });
         }
 
         // 残りがあれば再帰的に処理
-        $(element_wrapper!(@impl $name, $($rest)*);)?
+        $(element_wrapper!(@impl $name { $($rest)* });)?
     };
 
     // 終了条件
-    (@impl $name:ident,) => {};
+    (@impl $name:ident {}) => {};
+}
+
+// Element をラップした型に対して、中身のリストを取得するメソッドを定義
+macro_rules! impl_child_list {
+    ($name:ident { $list_name:literal => $list_ident:ident : [$item_type:tt] $(, $($rest:tt)*)? } ) => {
+        // 基本形 "list_name" => list_ident: item_type
+        impl<E: $crate::domtree::HasChildren> $name<E> {
+            pub fn $list_ident(&self) -> ::core::option::Option<$crate::helpers::List<&$crate::domtree::Element, $item_type<&$crate::domtree::Element>>> {
+                self.element
+                    .single_element_by_name($list_name)
+                    .map(|(el, _)| $crate::helpers::List::new(el))
+            }
+        }
+
+        ::paste::paste! {
+            impl<E: $crate::domtree::HasChildren + $crate::domtree::HasChildrenMut> $name<E> {
+                pub fn [<$list_ident _mut>](&mut self) -> $crate::helpers::List<&mut $crate::domtree::Element, $item_type<&mut $crate::domtree::Element>> {
+                    let (el, _) = self.element
+                        .ensure_element($list_name);
+                    $crate::helpers::List::new(el)
+                }
+            }
+        }
+
+        // 残りがあれば再帰的に処理
+        $(impl_child_list!($name { $($rest)* });)?
+    };
+
+    ($name:ident { $list_name:literal : [$item_type:tt] $(, $($rest:tt)*)? } ) => {
+        // 省略形 "list_name": item_type
+        ::paste::paste! {
+            // 文字列 $list_name をそのまま識別子として扱う
+            impl_child_list!($name { $list_name => [<$list_name>] : [$item_type] });
+        }
+
+        // 残りがあれば再帰的に処理
+        $(impl_child_list!($name { $($rest)* });)?
+    };
+
+    // 終了条件
+    ($name:ident {}) => {};
 }

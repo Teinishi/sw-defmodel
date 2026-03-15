@@ -1,4 +1,5 @@
-use super::{Element, utils::debug_utf8};
+use super::Element;
+use crate::utils::debug_utf8;
 use std::fmt::Debug;
 
 #[derive(PartialEq, Eq, Clone)]

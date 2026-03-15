@@ -3,7 +3,6 @@ mod element;
 pub mod error;
 mod has_children;
 mod node;
-mod utils;
 
 pub use attributes::{AttrSlot, Attributes};
 pub use element::{Element, HasAttr, HasAttrMut};
@@ -65,7 +64,7 @@ impl Document {
         Ok(Self { root: builder.root })
     }
 
-    pub fn find<K: AsRef<[u8]>>(&self, path: &[K]) -> Option<&Element> {
+    /*pub fn find<K: AsRef<[u8]>>(&self, path: &[K]) -> Option<&Element> {
         let mut r: Option<&Element> = None;
         for k in path {
             if let Some(el) = r {
@@ -82,7 +81,7 @@ impl Document {
             r = r.ensure_element(k).0;
         }
         r
-    }
+    }*/
 
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         for node in &self.root {
@@ -176,8 +175,8 @@ mod tests {
         let out = doc.to_bytes().expect("write failed");
         if out != expected.as_bytes() {
             panic!(
-                "assertion `out == expected` failed\n  out: {:?}\n  expected: {:?}",
-                utils::debug_utf8(&out),
+                "assertion `out == expected` failed\nout:\n{}\nexpected:\n{}",
+                crate::utils::debug_utf8(&out),
                 expected
             );
         }
