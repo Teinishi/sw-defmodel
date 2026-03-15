@@ -79,6 +79,16 @@ mod tests {
     }
 
     #[test]
+    fn schema() {
+        // definition.rs を変更したらここも合わせる
+        assert_eq!(Definition::<&Element>::ATTRIBUTES, ["name", "category"]);
+        assert_eq!(
+            Definition::<&Element>::CHILD_LISTS,
+            ["surfaces", "buoyancy_surfaces"]
+        );
+    }
+
+    #[test]
     fn read() {
         let definitions_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("test_data")

@@ -2,8 +2,8 @@ use crate::Surface;
 
 element_wrapper! {
     "definition" => Definition {
-        "name": String,
-        "category": u32,
+        "name" => name: String,
+        "category" => category: u32,
     }
 }
 
