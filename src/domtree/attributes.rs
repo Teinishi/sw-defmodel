@@ -53,13 +53,13 @@ impl Attributes {
         self.slots
             .iter()
             .find(|slot| slot.key == key)
-            .map(|slot| slot.get_unescaped())
+            .map(|slot| slot.value())
     }
 
     pub fn set_unescaped<K: AsRef<[u8]>>(&mut self, key: K, value: &str) {
         let key = key.as_ref();
         if let Some(slot) = self.slots.iter_mut().find(|slot| slot.key == key) {
-            slot.set_unescaped(value.as_bytes());
+            slot.set_value(value.as_bytes());
             return;
         }
 
@@ -164,10 +164,10 @@ impl AttrSlot {
         &self.key
     }
 
-    pub fn get_unescaped(&self) -> String {
+    pub fn value(&self) -> String {
         unescape_xml(&self.value)
     }
-    pub fn set_unescaped(&mut self, value: &[u8]) {
+    pub fn set_value(&mut self, value: &[u8]) {
         let (escaped_value, quote) = escape_xml(value);
         self.value = escaped_value;
         self.quote = quote;

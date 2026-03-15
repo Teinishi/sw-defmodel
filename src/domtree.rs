@@ -142,7 +142,6 @@ fn name_to_string(name: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quick_xml::Reader;
 
     fn test_helper<F>(input: &str, expected: &str, callback: F)
     where
@@ -402,7 +401,7 @@ mod tests {
                 .attributes
                 .remove("abc")
                 .expect("cannot remove attribute `abc`");
-            assert_eq!(abc.get_unescaped(), "def");
+            assert_eq!(abc.value(), "def");
         });
     }
 }
