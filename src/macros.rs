@@ -1,6 +1,58 @@
 // XML属性値を enum として扱えるようにするマクロ
 macro_rules! xml_enum {
-    (enum $name:ident {
+    (enum $name:ident : &str {
+        $($variant:ident = $val:expr),* $(,)?
+    }) => {
+        xml_enum!(@define $name { $($variant = $val),* });
+
+        impl ::core::str::FromStr for $name {
+            type Err = ::core::convert::Infallible;
+
+            fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
+                ::core::result::Result::Ok(match s {
+                    $($val => Self::$variant,)*
+                    other => Self::Unknown(other.to_string()),
+                })
+            }
+        }
+    };
+
+    (enum $name:ident : $val_type:ty {
+        $($variant:ident = $val:expr),* $(,)?
+    }) => {
+        xml_enum!(@define $name { $($variant = $val),* });
+
+        impl $name {
+            pub fn into_value(&self) -> ::core::option::Option<$val_type> {
+                match self {
+                    $(Self::$variant => ::core::option::Option::Some($val)),*,
+                    Self::Unknown(_) => ::core::option::Option::None,
+                }
+            }
+        }
+
+        impl ::core::convert::From<$val_type> for $name {
+            fn from(value: $val_type) -> Self {
+                match value {
+                    $($val => Self::$variant),*,
+                    _ => Self::Unknown(value.to_string())
+                }
+            }
+        }
+
+        impl ::core::str::FromStr for $name {
+            type Err = ::core::convert::Infallible;
+
+            fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
+                ::core::result::Result::Ok(match <$val_type as ::core::str::FromStr>::from_str(s) {
+                    $(::core::result::Result::Ok($val) => Self::$variant,)*
+                    _ => Self::Unknown(s.to_owned())
+                })
+            }
+        }
+    };
+
+    (@define $name:ident {
         $($variant:ident = $val:expr),* $(,)?
     }) => {
         #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::cmp::PartialEq, ::core::cmp::Eq)]
@@ -9,22 +61,11 @@ macro_rules! xml_enum {
             Unknown(String),
         }
 
-        impl std::str::FromStr for $name {
-            type Err = std::convert::Infallible;
-
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                Ok(match s {
-                    $($val => Self::$variant,)*
-                    other => Self::Unknown(other.to_string()),
-                })
-            }
-        }
-
-        impl std::fmt::Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        impl ::core::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 match self {
-                    $(Self::$variant => write!(f, $val),)*
-                    Self::Unknown(v) => write!(f, "{v}"),
+                    $(Self::$variant => ::core::write!(f, "{}", $val),)*
+                    Self::Unknown(v) => ::core::write!(f, "{v}"),
                 }
             }
         }

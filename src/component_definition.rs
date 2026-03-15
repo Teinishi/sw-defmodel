@@ -147,19 +147,12 @@ mod tests {
             |definition| {
                 let mut surfaces = definition.surfaces_mut();
                 for mut surface in surfaces.iter_mut() {
-                    let new_orientation = match surface
+                    let orientation = surface
                         .orientation()
                         .expect("failed to get orientation")
-                    {
-                        SurfaceOrientation::XPos => SurfaceOrientation::ZNeg,
-                        SurfaceOrientation::XNeg => SurfaceOrientation::ZPos,
-                        SurfaceOrientation::YPos => SurfaceOrientation::YNeg,
-                        SurfaceOrientation::YNeg => SurfaceOrientation::YPos,
-                        SurfaceOrientation::ZPos => SurfaceOrientation::XNeg,
-                        SurfaceOrientation::ZNeg => SurfaceOrientation::XPos,
-                        SurfaceOrientation::Unknown(_) => panic!("unexpected surface orientation"),
-                    };
-                    surface.set_orientation(new_orientation);
+                        .into_value()
+                        .expect("unexpected orientation");
+                    surface.set_orientation((5 - orientation).into());
                 }
             },
         );
