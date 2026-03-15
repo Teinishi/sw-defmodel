@@ -7,3 +7,4 @@ license = "MIT"
 
 [dependencies]
 quick-xml = "0.39.2"
+strum = { version = "0.28.0", features = ["derive"] }

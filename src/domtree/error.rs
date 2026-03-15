@@ -14,6 +14,7 @@ pub enum AttrError {
     ParseCharError(ParseCharError),
     ParseFloatError(ParseFloatError),
     ParseIntError(ParseIntError),
+    EnumParseError(strum::ParseError),
 }
 
 impl From<ParseBoolError> for AttrError {
@@ -43,6 +44,12 @@ impl From<ParseFloatError> for AttrError {
 impl From<ParseIntError> for AttrError {
     fn from(value: ParseIntError) -> Self {
         Self::ParseIntError(value)
+    }
+}
+
+impl From<strum::ParseError> for AttrError {
+    fn from(value: strum::ParseError) -> Self {
+        Self::EnumParseError(value)
     }
 }
 

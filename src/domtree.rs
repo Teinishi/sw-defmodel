@@ -65,6 +65,25 @@ impl Document {
         Ok(Self { root: builder.root })
     }
 
+    pub fn find<K: AsRef<[u8]>>(&self, path: &[K]) -> Option<&Element> {
+        let mut r: Option<&Element> = None;
+        for k in path {
+            if let Some(el) = r {
+                r = Some(el.single_element_by_name(k).map(|e| e.0)?);
+            } else {
+                r = Some(self.single_element_by_name(k).map(|e| e.0)?);
+            }
+        }
+        r
+    }
+    pub fn find_ensure<K: AsRef<[u8]>>(&mut self, root_tag: K, path: &[K]) -> &mut Element {
+        let mut r = self.ensure_element(root_tag).0;
+        for k in path {
+            r = r.ensure_element(k).0;
+        }
+        r
+    }
+
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         for node in &self.root {
             node.write(writer)?;

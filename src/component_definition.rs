@@ -1,9 +1,9 @@
-use super::{
-    domtree::Document,
-    domtree::{Element, HasChildren},
-};
+mod surfaces;
+
+use super::domtree::{self, Document, error::AttrError};
 use quick_xml::Reader;
-use std::{io::BufRead, path::Path};
+use std::{fmt::Display, io::BufRead, path::Path, str::FromStr};
+pub use surfaces::{SurfaceList, SurfaceListMut};
 
 #[derive(Clone, Debug)]
 pub struct ComponentDefinition {
@@ -21,20 +21,48 @@ impl ComponentDefinition {
         Ok(Self { tree })
     }
 
-    fn definition_el(&self) -> Option<&Element> {
+    fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Option<T>
+    where
+        T: FromStr<Err = E>,
+        AttrError: From<E>,
+    {
         self.tree
-            .single_element_by_name("definition")
-            .map(|(el, _)| el)
+            .find(&["definition"])
+            .and_then(|el| el.attr(key).ok())
     }
-    fn definition_el_ensure(&mut self) -> &mut Element {
-        self.tree.ensure_element("definition").0
+    fn set_attr<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T) {
+        self.tree
+            .find_ensure("definition", &[])
+            .set_attr(key, value);
     }
 
     pub fn name(&self) -> Option<String> {
-        self.definition_el().and_then(|el| el.attr("name").ok())
+        self.attr("name")
     }
     pub fn set_name(&mut self, value: String) {
-        self.definition_el_ensure().set_attr("name", value);
+        self.set_attr("name", value);
+    }
+
+    pub fn surfaces<'a>(&'a self) -> Option<SurfaceList<'a>> {
+        self.tree
+            .find(&["definition", "surfaces"])
+            .map(|element| SurfaceList { element })
+    }
+    pub fn surfaces_mut<'a>(&'a mut self) -> SurfaceListMut<'a> {
+        SurfaceListMut {
+            element: self.tree.find_ensure("definitions", &["surfaces"]),
+        }
+    }
+
+    pub fn buoyancy_surfaces<'a>(&'a self) -> Option<SurfaceList<'a>> {
+        self.tree
+            .find(&["definition", "buoyancy_surfaces"])
+            .map(|element| SurfaceList { element })
+    }
+    pub fn buoyancy_surfaces_mut<'a>(&'a mut self) -> SurfaceListMut<'a> {
+        SurfaceListMut {
+            element: self.tree.find_ensure("definitions", &["buoyancy_surfaces"]),
+        }
     }
 }
 
@@ -57,7 +85,19 @@ mod tests {
         for (filename, name) in items {
             let definition = ComponentDefinition::load(definitions_dir.join(filename))
                 .expect("failed to load {filename:?}");
+
             assert_eq!(definition.name(), Some(name.to_owned()));
+
+            if let Some(surfaces) = definition.surfaces() {
+                for surface in surfaces.iter() {
+                    assert!(surface.orientation().is_ok());
+                }
+            }
+            if let Some(surfaces) = definition.buoyancy_surfaces() {
+                for surface in surfaces.iter() {
+                    assert!(surface.orientation().is_ok());
+                }
+            }
         }
     }
 
