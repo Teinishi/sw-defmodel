@@ -1,6 +1,6 @@
 use super::{Element, Node, utils::trailing_whitespaces};
 
-pub(crate) trait HasChildren {
+pub trait HasChildren {
     fn children(&self) -> &Vec<Node>;
     fn children_mut(&mut self) -> &mut Vec<Node>;
 

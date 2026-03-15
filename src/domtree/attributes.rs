@@ -2,12 +2,16 @@ use super::{
     error::AttrError,
     utils::{debug_utf8, escape_xml, leading_whitespaces, unescape_xml},
 };
-use std::{fmt::Debug, io::Write, str::FromStr};
+use std::{
+    fmt::{Debug, Display},
+    io::Write,
+    str::FromStr,
+};
 
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct Attributes {
-    pub(crate) slots: Vec<AttrSlot>,
-    pub(crate) trailing_space: Vec<u8>,
+pub struct Attributes {
+    pub slots: Vec<AttrSlot>,
+    pub trailing_space: Vec<u8>,
 }
 
 impl Debug for Attributes {
@@ -36,7 +40,7 @@ impl Default for Attributes {
 }
 
 impl Attributes {
-    pub(crate) fn new(input: &[u8]) -> Self {
+    pub fn new(input: &[u8]) -> Self {
         let (slots, trailing_space) = AttrScanner::new(input).scan();
         Self {
             slots,
@@ -44,7 +48,7 @@ impl Attributes {
         }
     }
 
-    pub(crate) fn get_unescaped<K: AsRef<[u8]>>(&self, key: K) -> Option<String> {
+    pub fn get_unescaped<K: AsRef<[u8]>>(&self, key: K) -> Option<String> {
         let key = key.as_ref();
         self.slots
             .iter()
@@ -52,7 +56,7 @@ impl Attributes {
             .map(|slot| slot.get_unescaped())
     }
 
-    pub(crate) fn set_unescaped<K: AsRef<[u8]>>(&mut self, key: K, value: &str) {
+    pub fn set_unescaped<K: AsRef<[u8]>>(&mut self, key: K, value: &str) {
         let key = key.as_ref();
         if let Some(slot) = self.slots.iter_mut().find(|slot| slot.key == key) {
             slot.set_unescaped(value.as_bytes());
@@ -80,7 +84,7 @@ impl Attributes {
         });
     }
 
-    pub(crate) fn get<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
+    pub fn get<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
     where
         T: FromStr<Err = E>,
         AttrError: From<E>,
@@ -98,7 +102,11 @@ impl Attributes {
         }
     }
 
-    pub(crate) fn remove<K: AsRef<[u8]>>(&mut self, key: K) -> Option<AttrSlot> {
+    pub fn set<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T) {
+        self.set_unescaped(key, &value.to_string());
+    }
+
+    pub fn remove<K: AsRef<[u8]>>(&mut self, key: K) -> Option<AttrSlot> {
         let key = key.as_ref();
         let i = self
             .slots
@@ -112,7 +120,7 @@ impl Attributes {
         }
     }
 
-    pub(crate) fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         for attr in &self.slots {
             writer.write_all(&attr.prefix)?;
             writer.write_all(&[attr.quote])?;
@@ -124,11 +132,11 @@ impl Attributes {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct AttrSlot {
-    pub(crate) prefix: Vec<u8>,
-    pub(crate) key: Vec<u8>,
-    pub(crate) quote: u8,
-    pub(crate) value: Vec<u8>,
+pub struct AttrSlot {
+    prefix: Vec<u8>,
+    key: Vec<u8>,
+    quote: u8,
+    value: Vec<u8>,
 }
 
 impl Debug for AttrSlot {
@@ -152,10 +160,14 @@ impl Debug for AttrSlot {
 }
 
 impl AttrSlot {
-    pub(crate) fn get_unescaped(&self) -> String {
+    pub fn key(&self) -> &Vec<u8> {
+        &self.key
+    }
+
+    pub fn get_unescaped(&self) -> String {
         unescape_xml(&self.value)
     }
-    pub(crate) fn set_unescaped(&mut self, value: &[u8]) {
+    pub fn set_unescaped(&mut self, value: &[u8]) {
         let (escaped_value, quote) = escape_xml(value);
         self.value = escaped_value;
         self.quote = quote;

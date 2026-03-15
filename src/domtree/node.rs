@@ -2,7 +2,7 @@ use super::{Element, utils::debug_utf8};
 use std::fmt::Debug;
 
 #[derive(PartialEq, Eq, Clone)]
-pub(crate) enum Node {
+pub enum Node {
     Element(Element),
     Text(Vec<u8>),
     CData(Vec<u8>),
@@ -42,7 +42,7 @@ impl Debug for Node {
 }
 
 impl Node {
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         match self {
             Node::Element(el) => el.write(writer),
             Node::Text(bytes) => writer.write_all(bytes),

@@ -1,14 +1,17 @@
 use super::{
     Node, attributes::Attributes, error::AttrError, has_children::HasChildren, utils::debug_utf8,
 };
-use std::{fmt::Debug, str::FromStr};
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
 #[derive(PartialEq, Eq, Clone)]
-pub(crate) struct Element {
-    pub(crate) name: Vec<u8>,
-    pub(crate) attributes: Attributes,
-    pub(crate) children: Vec<Node>,
-    pub(crate) is_self_closing: bool,
+pub struct Element {
+    pub name: Vec<u8>,
+    pub attributes: Attributes,
+    pub children: Vec<Node>,
+    pub is_self_closing: bool,
 }
 
 impl Debug for Element {
@@ -32,7 +35,7 @@ impl Debug for Element {
 }
 
 impl Element {
-    pub(crate) fn new_empty<K: AsRef<[u8]>>(name: K) -> Self {
+    pub fn new_empty<K: AsRef<[u8]>>(name: K) -> Self {
         Self {
             name: name.as_ref().into(),
             attributes: Attributes::default(),
@@ -53,7 +56,7 @@ impl Element {
         }
     }
 
-    pub(crate) fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
+    pub fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
     where
         T: FromStr<Err = E>,
         AttrError: From<E>,
@@ -61,7 +64,11 @@ impl Element {
         self.attributes.get(key)
     }
 
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    pub fn set_attr<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T) {
+        self.attributes.set(key, value);
+    }
+
+    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(b"<")?;
         writer.write_all(&self.name)?;
         self.attributes.write(writer)?;

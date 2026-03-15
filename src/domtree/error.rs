@@ -7,7 +7,7 @@ use std::{
 };
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub(crate) enum AttrError {
+pub enum AttrError {
     NotFound(Vec<u8>),
     AddrParseError(AddrParseError),
     ParseBoolError(ParseBoolError),

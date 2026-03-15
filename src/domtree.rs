@@ -1,26 +1,34 @@
 mod attributes;
 mod element;
-mod error;
+pub mod error;
 mod has_children;
 mod node;
 mod utils;
 
-use element::Element;
-use node::Node;
+pub use attributes::{AttrSlot, Attributes};
+pub use element::Element;
+pub use has_children::HasChildren;
+pub use node::Node;
 use quick_xml::{Reader, errors::IllFormedError, events::Event};
-use std::{fmt::Debug, io::BufRead};
-
-use crate::domtree::has_children::HasChildren;
+use std::{fmt::Debug, io::BufRead, path::Path};
 
 #[derive(Clone, Default, Debug)]
-pub(crate) struct Document {
+pub struct Document {
     root: Vec<Node>,
 }
 
 impl Document {
-    pub(crate) fn from_reader<R: BufRead>(
-        reader: &mut Reader<R>,
-    ) -> Result<Self, quick_xml::Error> {
+    pub fn from_xml_str(s: &str) -> Result<Self, quick_xml::Error> {
+        let mut reader = Reader::from_str(s);
+        Self::from_xml_reader(&mut reader)
+    }
+
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, quick_xml::Error> {
+        let mut reader = Reader::from_file(path)?;
+        Self::from_xml_reader(&mut reader)
+    }
+
+    pub fn from_xml_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, quick_xml::Error> {
         let mut builder = TreeBuilder::default();
 
         let mut buf = Vec::new();
@@ -57,14 +65,14 @@ impl Document {
         Ok(Self { root: builder.root })
     }
 
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         for node in &self.root {
             node.write(writer)?;
         }
         Ok(())
     }
 
-    pub(crate) fn to_bytes(&self) -> std::io::Result<Vec<u8>> {
+    pub fn to_bytes(&self) -> std::io::Result<Vec<u8>> {
         let mut out = Vec::new();
         self.write(&mut out)?;
         Ok(out)
@@ -140,8 +148,7 @@ mod tests {
     where
         F: FnOnce(&mut Document),
     {
-        let mut reader = Reader::from_str(input);
-        let mut doc = Document::from_reader(&mut reader).expect("parse failed");
+        let mut doc = Document::from_xml_str(input).expect("parse failed");
 
         callback(&mut doc);
 
