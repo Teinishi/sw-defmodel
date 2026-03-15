@@ -1,5 +1,5 @@
 use super::{
-    Node, attributes::Attributes, error::AttrError, has_children::HasChildren, utils::debug_utf8,
+    HasChildren, HasChildrenMut, Node, attributes::Attributes, error::AttrError, utils::debug_utf8,
 };
 use std::{
     fmt::{Debug, Display},
@@ -56,18 +56,6 @@ impl Element {
         }
     }
 
-    pub fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
-    where
-        T: FromStr<Err = E>,
-        AttrError: From<E>,
-    {
-        self.attributes.get(key)
-    }
-
-    pub fn set_attr<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T) {
-        self.attributes.set(key, value);
-    }
-
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(b"<")?;
         writer.write_all(&self.name)?;
@@ -92,7 +80,81 @@ impl HasChildren for Element {
     fn children(&self) -> &Vec<Node> {
         &self.children
     }
+}
+
+impl HasChildrenMut for Element {
     fn children_mut(&mut self) -> &mut Vec<Node> {
         &mut self.children
+    }
+}
+
+impl HasChildren for &Element {
+    fn children(&self) -> &Vec<Node> {
+        &self.children
+    }
+}
+
+impl HasChildren for &mut Element {
+    fn children(&self) -> &Vec<Node> {
+        &self.children
+    }
+}
+
+impl HasChildrenMut for &mut Element {
+    fn children_mut(&mut self) -> &mut Vec<Node> {
+        &mut self.children
+    }
+}
+
+pub trait HasAttr {
+    fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
+    where
+        T: FromStr<Err = E>,
+        AttrError: From<E>;
+}
+
+pub trait HasAttrMut {
+    fn set_attr<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T);
+}
+
+impl HasAttr for Element {
+    fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
+    where
+        T: FromStr<Err = E>,
+        AttrError: From<E>,
+    {
+        self.attributes.get(key)
+    }
+}
+
+impl HasAttrMut for Element {
+    fn set_attr<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T) {
+        self.attributes.set(key, value);
+    }
+}
+
+impl HasAttr for &Element {
+    fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
+    where
+        T: FromStr<Err = E>,
+        AttrError: From<E>,
+    {
+        self.attributes.get(key)
+    }
+}
+
+impl HasAttr for &mut Element {
+    fn attr<K: AsRef<[u8]>, T, E>(&self, key: K) -> Result<T, AttrError>
+    where
+        T: FromStr<Err = E>,
+        AttrError: From<E>,
+    {
+        self.attributes.get(key)
+    }
+}
+
+impl HasAttrMut for &mut Element {
+    fn set_attr<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T) {
+        self.attributes.set(key, value);
     }
 }

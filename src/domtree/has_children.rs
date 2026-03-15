@@ -2,19 +2,9 @@ use super::{Element, Node, utils::trailing_whitespaces};
 
 pub trait HasChildren {
     fn children(&self) -> &Vec<Node>;
-    fn children_mut(&mut self) -> &mut Vec<Node>;
 
     fn get_child(&self, index: usize) -> Option<&Node> {
         self.children().get(index)
-    }
-    fn get_child_mut(&mut self, index: usize) -> Option<&mut Node> {
-        self.children_mut().get_mut(index)
-    }
-    fn remove_child(&mut self, index: usize) -> Node {
-        self.children_mut().remove(index)
-    }
-    fn insert_child(&mut self, index: usize, node: Node) {
-        self.children_mut().insert(index, node);
     }
 
     fn elements(&self) -> impl Iterator<Item = (&Element, usize)> {
@@ -26,6 +16,32 @@ pub trait HasChildren {
             }
         })
     }
+
+    fn elements_by_name<K: AsRef<[u8]>>(&self, name: K) -> impl Iterator<Item = (&Element, usize)> {
+        self.elements()
+            .filter(move |(el, _)| el.name == name.as_ref())
+    }
+
+    fn single_element_by_name<K: AsRef<[u8]>>(&self, name: K) -> Option<(&Element, usize)> {
+        self.elements().find(|(el, _)| el.name == name.as_ref())
+    }
+}
+
+pub trait HasChildrenMut {
+    fn children_mut(&mut self) -> &mut Vec<Node>;
+
+    fn get_child_mut(&mut self, index: usize) -> Option<&mut Node> {
+        self.children_mut().get_mut(index)
+    }
+
+    fn remove_child(&mut self, index: usize) -> Node {
+        self.children_mut().remove(index)
+    }
+
+    fn insert_child(&mut self, index: usize, node: Node) {
+        self.children_mut().insert(index, node);
+    }
+
     fn elements_mut(&mut self) -> impl Iterator<Item = (&mut Element, usize)> {
         self.children_mut()
             .iter_mut()
@@ -39,10 +55,6 @@ pub trait HasChildren {
             })
     }
 
-    fn elements_by_name<K: AsRef<[u8]>>(&self, name: K) -> impl Iterator<Item = (&Element, usize)> {
-        self.elements()
-            .filter(move |(el, _)| el.name == name.as_ref())
-    }
     fn elements_by_name_mut<K: AsRef<[u8]>>(
         &mut self,
         name: K,
@@ -51,9 +63,6 @@ pub trait HasChildren {
             .filter(move |(el, _)| el.name == name.as_ref())
     }
 
-    fn single_element_by_name<K: AsRef<[u8]>>(&self, name: K) -> Option<(&Element, usize)> {
-        self.elements().find(|(el, _)| el.name == name.as_ref())
-    }
     fn single_element_by_name_mut<K: AsRef<[u8]>>(
         &mut self,
         name: K,
@@ -81,7 +90,11 @@ pub trait HasChildren {
         }
         removed
     }
-    fn insert_element_before(&mut self, index: usize, element: Element) {
+
+    fn insert_element_before(&mut self, index: usize, element: Element)
+    where
+        Self: HasChildren,
+    {
         // index で指定した位置の要素を後ろに押しのけて新しい要素を挿入する
         if index >= 1
             && let Some(ws) = self
@@ -95,7 +108,11 @@ pub trait HasChildren {
             self.insert_child(index, Node::Element(element));
         }
     }
-    fn insert_element_after(&mut self, index: usize, element: Element) {
+
+    fn insert_element_after(&mut self, index: usize, element: Element)
+    where
+        Self: HasChildren,
+    {
         // index で指定した位置の要素の後ろに新しい要素を挿入する
         if index >= 1
             && let Some(ws) = self
@@ -111,7 +128,11 @@ pub trait HasChildren {
             self.insert_child(index + 1, Node::Element(element));
         }
     }
-    fn push_element(&mut self, element: Element) -> usize {
+
+    fn push_element(&mut self, element: Element) -> usize
+    where
+        Self: HasChildren,
+    {
         let children = self.children();
         let i = children
             .iter()
@@ -128,7 +149,23 @@ pub trait HasChildren {
         }
     }
 
-    fn ensure_element<K: AsRef<[u8]>>(&mut self, name: K) -> (&mut Element, usize) {
+    fn pop_element(&mut self) -> Option<Node>
+    where
+        Self: HasChildren,
+    {
+        let children = self.children();
+        let n = children.len();
+        children
+            .iter()
+            .rev()
+            .position(|c| matches!(c, Node::Element(_)))
+            .map(|i| self.remove_element(n - 1 - i))
+    }
+
+    fn ensure_element<K: AsRef<[u8]>>(&mut self, name: K) -> (&mut Element, usize)
+    where
+        Self: HasChildren,
+    {
         let i = self
             .children()
             .iter()

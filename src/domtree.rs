@@ -6,8 +6,8 @@ mod node;
 mod utils;
 
 pub use attributes::{AttrSlot, Attributes};
-pub use element::Element;
-pub use has_children::HasChildren;
+pub use element::{Element, HasAttr, HasAttrMut};
+pub use has_children::{HasChildren, HasChildrenMut};
 pub use node::Node;
 use quick_xml::{Reader, errors::IllFormedError, events::Event};
 use std::{fmt::Debug, io::BufRead, path::Path};
@@ -102,6 +102,9 @@ impl HasChildren for Document {
     fn children(&self) -> &Vec<Node> {
         &self.root
     }
+}
+
+impl HasChildrenMut for Document {
     fn children_mut(&mut self) -> &mut Vec<Node> {
         &mut self.root
     }

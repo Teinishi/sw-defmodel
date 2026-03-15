@@ -1,9 +1,12 @@
 mod surfaces;
 
-use super::domtree::{self, Document, error::AttrError};
+use crate::{
+    domtree::{Document, Element, HasAttr, HasAttrMut, error::AttrError},
+    helpers::List,
+};
 use quick_xml::Reader;
 use std::{fmt::Display, io::BufRead, path::Path, str::FromStr};
-pub use surfaces::{SurfaceList, SurfaceListMut};
+pub use surfaces::{Surface, SurfaceOrientation};
 
 #[derive(Clone, Debug)]
 pub struct ComponentDefinition {
@@ -43,26 +46,22 @@ impl ComponentDefinition {
         self.set_attr("name", value);
     }
 
-    pub fn surfaces<'a>(&'a self) -> Option<SurfaceList<'a>> {
-        self.tree
-            .find(&["definition", "surfaces"])
-            .map(|element| SurfaceList { element })
+    pub fn surfaces(&self) -> Option<List<&Element, Surface<&Element>>> {
+        self.tree.find(&["definition", "surfaces"]).map(List::new)
     }
-    pub fn surfaces_mut<'a>(&'a mut self) -> SurfaceListMut<'a> {
-        SurfaceListMut {
-            element: self.tree.find_ensure("definitions", &["surfaces"]),
-        }
+    pub fn surfaces_mut(&mut self) -> List<&mut Element, Surface<&mut Element>> {
+        let surfaces = self.tree.find_ensure("definitions", &["surfaces"]);
+        List::new(surfaces)
     }
 
-    pub fn buoyancy_surfaces<'a>(&'a self) -> Option<SurfaceList<'a>> {
+    pub fn buoyancy_surfaces(&self) -> Option<List<&Element, Surface<&Element>>> {
         self.tree
             .find(&["definition", "buoyancy_surfaces"])
-            .map(|element| SurfaceList { element })
+            .map(List::new)
     }
-    pub fn buoyancy_surfaces_mut<'a>(&'a mut self) -> SurfaceListMut<'a> {
-        SurfaceListMut {
-            element: self.tree.find_ensure("definitions", &["buoyancy_surfaces"]),
-        }
+    pub fn buoyancy_surfaces_mut(&mut self) -> List<&mut Element, Surface<&mut Element>> {
+        let surfaces = self.tree.find_ensure("definitions", &["buoyancy_surfaces"]);
+        List::new(surfaces)
     }
 }
 
@@ -91,11 +90,17 @@ mod tests {
             if let Some(surfaces) = definition.surfaces() {
                 for surface in surfaces.iter() {
                     assert!(surface.orientation().is_ok());
+                    assert!(surface.rotation().is_ok());
+                    assert!(surface.shape().is_ok());
+                    assert!(surface.trans_type().is_ok());
                 }
             }
             if let Some(surfaces) = definition.buoyancy_surfaces() {
                 for surface in surfaces.iter() {
                     assert!(surface.orientation().is_ok());
+                    assert!(surface.rotation().is_ok());
+                    assert!(surface.shape().is_ok());
+                    assert!(surface.trans_type().is_ok());
                 }
             }
         }
