@@ -10,6 +10,14 @@ use sw_defmodel::domtree::{Document, Element, HasChildren};
 
 const MAX_ENUM: usize = 10;
 
+const RUST_KEYWORDS: [&str; 50] = [
+    "as", "async", "await", "break", "const", "continue", "crate", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+    "ref", "return", "Self", "self", "static", "struct", "super", "trait", "true", "type",
+    "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final", "macro",
+    "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
+];
+
 #[derive(Default, Debug)]
 struct Schema {
     attributes: Vec<SchemaAttribute>,
@@ -59,12 +67,21 @@ impl Schema {
         use heck::ToUpperCamelCase;
         let struct_name = tag_name.to_upper_camel_case();
 
-        writeln!(f, "element_wrapper! {{")?;
+        writeln!(f, "define_attributes! {{")?;
         writeln!(f, "    {tag_name:?} => {struct_name} {{")?;
 
         for attr in self.attributes {
-            write!(f, "        {:?}: ", attr.get_key())?;
-            writeln!(f, "{},", attr.get_type())?;
+            let key = attr.get_key();
+            if RUST_KEYWORDS.contains(&key) {
+                write!(f, "        {:?} => {}_attr: ", key, key)?;
+            } else {
+                write!(f, "        {:?}: ", key)?;
+            }
+            let ident = std::str::from_utf8(&attr.key)
+                .expect("utf-8 error")
+                .to_upper_camel_case();
+            attr.get_type().fmt(f, "        ", &ident)?;
+            writeln!(f, ",")?;
         }
 
         writeln!(f, "    }}")?;
@@ -73,7 +90,7 @@ impl Schema {
         Ok(())
     }
 
-    fn finalize(self, prefix: Option<&str>) {
+    /*fn finalize(self, prefix: Option<&str>) {
         for attr in self.attributes {
             if let Some(prefix) = prefix {
                 print!("{prefix}/");
@@ -107,7 +124,7 @@ impl Schema {
                 child.schema.finalize(Some(child_name));
             }
         }
-    }
+    }*/
 }
 
 #[derive(Debug)]
@@ -135,55 +152,120 @@ impl SchemaAttribute {
     }
 
     fn get_type(self) -> ValueType {
-        if self.values.iter().all(|v| v.parse::<bool>().is_ok()) {
-            ValueType::Bool
-        } else if self.values.iter().all(|v| v.parse::<u32>().is_ok()) {
-            if self.values.len() <= MAX_ENUM {
-                ValueType::Enum(self.values)
-            } else {
-                ValueType::U32
-            }
-        } else if self.values.iter().all(|v| v.parse::<i32>().is_ok()) {
-            ValueType::I32
-        } else if self.values.iter().all(|v| v.parse::<f32>().is_ok()) {
-            ValueType::F32
-        } else if self.values.len() <= MAX_ENUM {
-            ValueType::Enum(self.values)
+        ValueType::from_values(self.values)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+enum PrimitiveType {
+    Bool,
+    U32,
+    U64,
+    I32,
+    F32,
+    String,
+}
+
+impl PrimitiveType {
+    fn from_values(values: &[String]) -> Self {
+        if values.iter().all(|v| v.parse::<bool>().is_ok()) {
+            Self::Bool
+        } else if values.iter().all(|v| v.parse::<u32>().is_ok()) {
+            Self::U32
+        } else if values.iter().all(|v| v.parse::<u64>().is_ok()) {
+            Self::U64
+        } else if values.iter().all(|v| v.parse::<i32>().is_ok()) {
+            Self::I32
+        } else if values.iter().all(|v| v.parse::<f32>().is_ok()) {
+            Self::F32
         } else {
-            ValueType::String
+            Self::String
+        }
+    }
+}
+
+impl Display for PrimitiveType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bool => write!(f, "bool"),
+            Self::U32 => write!(f, "u32"),
+            Self::U64 => write!(f, "u64"),
+            Self::I32 => write!(f, "i32"),
+            Self::F32 => write!(f, "f32"),
+            Self::String => write!(f, "String"),
         }
     }
 }
 
 #[derive(Debug)]
 enum ValueType {
-    Bool,
-    U32,
-    I32,
-    F32,
-    Enum(Vec<String>),
-    String,
+    Primitive(PrimitiveType),
+    Enum(PrimitiveType, Vec<String>),
 }
 
-impl Display for ValueType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ValueType {
+    fn from_values(values: Vec<String>) -> Self {
+        let prim = PrimitiveType::from_values(&values);
+        if values.len() < MAX_ENUM
+            && matches!(
+                prim,
+                PrimitiveType::U32
+                    | PrimitiveType::U64
+                    | PrimitiveType::I32
+                    | PrimitiveType::String
+            )
+        {
+            Self::Enum(prim, values)
+        } else {
+            Self::Primitive(prim)
+        }
+    }
+
+    fn fmt<W: Write>(&self, f: &mut BufWriter<W>, indent: &str, type_name: &str) -> io::Result<()> {
+        use heck::ToUpperCamelCase;
+
         match self {
-            Self::Bool => write!(f, "bool"),
-            Self::U32 => write!(f, "u32"),
-            Self::I32 => write!(f, "i32"),
-            Self::F32 => write!(f, "f32"),
-            Self::Enum(values) => {
-                // TODO: マクロを直したらここも直す
-                if let Some((last, rest)) = values.split_last() {
-                    for v in rest {
-                        write!(f, "{v:?} | ")?;
-                    }
-                    write!(f, "{last:?}")
+            Self::Primitive(prim) => write!(f, "{}", prim),
+            Self::Enum(val_type, variants) => {
+                if matches!(val_type, PrimitiveType::String) {
+                    writeln!(f, "enum {} &str {{", type_name)?;
                 } else {
-                    write!(f, "None")
+                    writeln!(f, "enum {} {} {{", type_name, val_type)?;
                 }
+
+                for value in variants {
+                    match val_type {
+                        PrimitiveType::U32 => {
+                            let v = value.parse::<u32>().unwrap();
+                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
+                        }
+                        PrimitiveType::U64 => {
+                            let v = value.parse::<u64>().unwrap();
+                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
+                        }
+                        PrimitiveType::I32 => {
+                            let v = value.parse::<i32>().unwrap();
+                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
+                        }
+                        PrimitiveType::String => {
+                            if value.is_empty() {
+                                writeln!(f, "{}    None = {:?},", indent, value)?;
+                            } else {
+                                writeln!(
+                                    f,
+                                    "{}    {} = {:?},",
+                                    indent,
+                                    value.to_upper_camel_case(),
+                                    value
+                                )?;
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+                write!(f, "{}}}", indent)
             }
-            Self::String => write!(f, "String"),
         }
     }
 }
