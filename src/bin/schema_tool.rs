@@ -12,38 +12,60 @@ use sw_defmodel::domtree::{Document, Element, HasChildren};
 const MAX_ENUM: usize = 10;
 
 fn main() {
+    // test_data/vanilla_definitions から <definition> のスキーマを生成
     generate_schema(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
+        &[Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("test_data")
-            .join("vanilla_definitions"),
+            .join("vanilla_definitions")],
         "definition",
+        &mut DefinitionTagRule::default(),
     )
     .unwrap();
 }
 
-fn generate_schema<P: AsRef<Path> + Debug>(dir: P, tag_name: &str) -> io::Result<()> {
+// <definition> のスキーマの上書きルール
+#[derive(Default, Debug)]
+struct DefinitionTagRule;
+
+impl SchemaWriteRule for DefinitionTagRule {
+    fn before_define_tag(&mut self, f: &mut BufWriter<File>, name: &str, schema: &Schema) -> bool {
+        false
+    }
+}
+
+trait SchemaWriteRule {
+    fn before_define_tag(&mut self, f: &mut BufWriter<File>, name: &str, schema: &Schema) -> bool;
+}
+
+fn generate_schema<P: AsRef<Path> + Debug, R: SchemaWriteRule>(
+    dirs: &[P],
+    tag_name: &str,
+    tag_rule: &mut R,
+) -> io::Result<()> {
     let mut schema = Schema::default();
 
-    for entry in std::fs::read_dir(&dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"))
-        {
-            let doc = Document::from_file(path).expect("failed to parse {path:?}");
-            schema.update(
-                doc.single_element_by_name(tag_name)
-                    .expect("failed to get <{tag_name}> in {path:?}")
-                    .0,
-            );
+    for dir in dirs {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"))
+            {
+                let doc = Document::from_file(path).expect("failed to parse {path:?}");
+                schema.update(
+                    doc.single_element_by_name(tag_name)
+                        .expect("failed to get <{tag_name}> in {path:?}")
+                        .0,
+                );
+            }
         }
     }
 
-    let output_dir = Path::new("tmp");
-    fs::create_dir_all(output_dir)?;
+    let output_dir = Path::new("tmp").join(tag_name);
+    fs::create_dir_all(&output_dir)?;
 
-    schema.write(output_dir, tag_name)
+    schema.write(output_dir, tag_name, tag_rule)
 }
 
 const RUST_KEYWORDS: [&str; 50] = [
@@ -54,24 +76,32 @@ const RUST_KEYWORDS: [&str; 50] = [
     "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
 ];
 
-fn write_define_tag<W: Write>(
+// define_tag マクロで属性定義
+fn write_define_tag<W: Write, S: AsRef<str>>(
     f: &mut BufWriter<W>,
     name: &str,
-    attributes: &[(String, String)],
+    attributes: &[(S, S)],
 ) -> io::Result<()> {
     writeln!(f, "define_tag!({name} {{")?;
 
     for (key, val_type) in attributes {
-        if RUST_KEYWORDS.contains(&key.as_str()) {
-            write!(f, "    {:?} => {}_attr: {},", key, key, val_type)?;
+        if RUST_KEYWORDS.contains(&key.as_ref()) {
+            writeln!(
+                f,
+                "    {:?} => {}_attr: {},",
+                key.as_ref(),
+                key.as_ref(),
+                val_type.as_ref()
+            )?;
         } else {
-            write!(f, "    {:?}: {},", key, val_type)?;
+            writeln!(f, "    {:?}: {},", key.as_ref(), val_type.as_ref())?;
         }
     }
 
     writeln!(f, "}});")
 }
 
+// define_unique_children マクロで親と子要素の紐づけ定義
 fn write_define_unique_children<W: Write>(
     f: &mut BufWriter<W>,
     name: &str,
@@ -96,6 +126,7 @@ fn write_define_unique_children<W: Write>(
     writeln!(f, "}});")
 }
 
+// define_lists マクロでリストの定義
 fn write_define_lists<W: Write>(
     f: &mut BufWriter<W>,
     name: &str,
@@ -171,82 +202,100 @@ impl Schema {
         }
     }
 
-    fn write<P: AsRef<Path> + Copy>(self, path: P, tag_name: &str) -> io::Result<()> {
+    fn write<P: AsRef<Path>, R: SchemaWriteRule>(
+        self,
+        path: P,
+        tag_name: &str,
+        tag_rule: &mut R,
+    ) -> io::Result<()> {
         let name = tag_name.to_snake_case();
-        let struct_name = tag_name.to_upper_camel_case();
+        let mut f = BufWriter::new(File::create(
+            path.as_ref().join(&name).with_extension("rs"),
+        )?);
 
-        let mut f = BufWriter::new(File::create(path.as_ref().join(name).with_extension("rs"))?);
+        let skip = tag_rule.before_define_tag(&mut f, tag_name, &self);
+        if !skip {
+            let struct_name = tag_name.to_upper_camel_case();
 
-        // 属性定義
-        write_define_tag(
-            &mut f,
-            &struct_name,
-            &self
-                .attributes
-                .into_iter()
-                .map(|a| a.into_key_type_string("    "))
-                .collect::<Vec<(String, String)>>(),
-        )?;
-
-        // 子要素スキャン
-        let mut child_lists = Vec::new();
-        let mut unique_children = Vec::new();
-        for child in self.children {
-            if child.max_count == 1
-                && child.schema.attributes.is_empty()
-                && child.schema.children.len() == 1
-            {
-                // 属性を持たず、単一種類の孫を持っている子要素はリストとみなす
-                child_lists.push(child);
-            } else {
-                // リスト要素以外で複数回登場したり、孫を持ったりするケースは想定していないので assert
-                assert!(
-                    child.max_count == 1
-                        || (
-                            // Keep Active Block だけなぜか particle_offset と particle_bounds を2つ持つ
-                            tag_name == "definition"
-                                && matches!(child.get_name(), "particle_offset" | "particle_bounds")
-                        )
-                );
-                assert!(child.schema.children.is_empty());
-                unique_children.push(child);
-            }
-        }
-
-        // 単一子要素と親の紐づけを定義
-        if !unique_children.is_empty() {
-            writeln!(f, "")?;
-            write_define_unique_children(&mut f, &struct_name, &unique_children)?;
-        }
-
-        // 子リストを定義
-        if !child_lists.is_empty() {
-            writeln!(f, "")?;
-            write_define_lists(&mut f, &struct_name, &child_lists)?;
-        }
-
-        // 単一子要素を定義
-        for child in unique_children {
-            let child_struct_name = child.get_name().to_upper_camel_case();
-
-            writeln!(f, "")?;
+            // 属性定義
             write_define_tag(
                 &mut f,
-                &child_struct_name,
-                &child
-                    .schema
+                &struct_name,
+                &self
                     .attributes
                     .into_iter()
                     .map(|a| a.into_key_type_string("    "))
                     .collect::<Vec<(String, String)>>(),
             )?;
-        }
 
-        // リストアイテムの write を再帰呼び出し
-        for child in child_lists {
-            for item in child.schema.children {
-                let item_name = item.get_name().to_owned();
-                item.schema.write(path, &item_name)?;
+            // 子要素スキャン
+            let mut child_lists = Vec::new();
+            let mut unique_children = Vec::new();
+            for child in self.children {
+                if child.max_count == 1
+                    && child.schema.attributes.is_empty()
+                    && child.schema.children.len() == 1
+                {
+                    // 属性を持たず、単一種類の孫を持っている子要素はリストとみなす
+                    child_lists.push(child);
+                } else {
+                    // リスト要素以外で複数回登場したり、孫を持ったりするケースは想定していないので assert
+                    assert!(
+                        child.max_count == 1
+                            || (
+                                // Keep Active Block だけなぜか particle_offset と particle_bounds を2つ持つ
+                                tag_name == "definition"
+                                    && matches!(
+                                        child.get_name(),
+                                        "particle_offset" | "particle_bounds"
+                                    )
+                            )
+                    );
+                    assert!(child.schema.children.is_empty());
+                    unique_children.push(child);
+                }
+            }
+
+            // 単一子要素と親の紐づけを定義
+            if !unique_children.is_empty() {
+                writeln!(f, "")?;
+                write_define_unique_children(&mut f, &struct_name, &unique_children)?;
+            }
+
+            // 子リストを定義
+            if !child_lists.is_empty() {
+                writeln!(f, "")?;
+                write_define_lists(&mut f, &struct_name, &child_lists)?;
+            }
+
+            // 単一子要素を定義
+            for child in unique_children {
+                let skip = tag_rule.before_define_tag(&mut f, child.get_name(), &child.schema);
+                if skip {
+                    continue;
+                }
+
+                let child_name = child.get_name();
+                let child_struct_name = child_name.to_upper_camel_case();
+                writeln!(f, "")?;
+                write_define_tag(
+                    &mut f,
+                    &child_struct_name,
+                    &child
+                        .schema
+                        .attributes
+                        .into_iter()
+                        .map(|a| a.into_key_type_string("    "))
+                        .collect::<Vec<(String, String)>>(),
+                )?;
+            }
+
+            // リストアイテムの write を再帰呼び出し
+            for child in child_lists {
+                for item in child.schema.children {
+                    let item_name = item.get_name().to_owned();
+                    item.schema.write(path.as_ref(), &item_name, tag_rule)?;
+                }
             }
         }
 
