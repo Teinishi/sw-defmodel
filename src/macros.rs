@@ -74,7 +74,7 @@ macro_rules! xml_enum {
 
 // Element をラップして属性と型の対応付けをした struct を作成
 macro_rules! define_attributes {
-    ($tag_name:literal => $name:ident { $($body:tt)* }) => {
+    ($name:ident { $($body:tt)* }) => {
         // エントリポイント
         #[derive(::core::fmt::Debug)]
         pub struct $name<E> {
@@ -88,9 +88,7 @@ macro_rules! define_attributes {
             }
         }
 
-        impl<E> $crate::helpers::ListItem<E> for $name<E> {
-            const NAME: &'static str = $tag_name;
-
+        impl<E> $crate::helpers::FromElement<E> for $name<E> {
             fn from_element(element: E) -> Self {
                 Self { element }
             }
@@ -172,50 +170,44 @@ macro_rules! define_attributes {
 }
 
 // Element をラップした型に対して、中身の単一子要素を取得するメソッドを定義
-macro_rules! impl_unique_child {
+macro_rules! define_unique_children {
     ($name:ident { $($rest:tt)* }) => {
         // エントリポイント
-        impl_unique_child!(@loop [] $name { $($rest)* });
+        define_unique_children!(@loop [] $name { $($rest)* });
     };
 
-    (@loop [$($acc:literal,)*] $name:ident { $child_name:literal => $child_ident:ident : $child_type:tt $(, $($rest:tt)*)? } ) => {
-        // 基本形 "child_name" => child_ident: item_type
-        impl_unique_child!(@impl $name { $child_name => $child_ident : $child_type });
+    (@loop [$($acc:ident,)*] $name:ident { <$child_name:ident> => $child_ident:ident : $child_type:tt $(, $($rest:tt)*)? } ) => {
+        // 基本形 <child_name> => child_ident: child_type
+        define_unique_children!(@impl $name { <$child_name> => $child_ident : $child_type });
 
         // 残りがあれば再帰的に処理
-        impl_unique_child!(@loop [$($acc,)* $child_name,] $name { $($($rest)*)? });
+        define_unique_children!(@loop [$($acc,)* $child_name,] $name { $($($rest)*)? });
     };
 
-    /*(@loop [$($acc:literal,)*] $name:ident { $child_name:literal : $item_type:ty $(, $($rest:tt)*)? } ) => {
-        // 省略形 "child_name": item_type
-        ::paste::paste! {
-            // 文字列 $child_name をそのまま識別子として扱う
-            impl_unique_child!($name { $child_name => [<$child_name>] : $item_type });
-        }
-
-        // 残りがあれば再帰的に処理
-        impl_unique_child!(@loop [$($acc,)* $child_name,] $name { $($($rest)*)? });
-    };*/
+    (@loop [$($acc:ident,)*] $name:ident { <$child_name:ident> : $child_type:tt $(, $($rest:tt)*)? } ) => {
+        // 省略形 <child_name>: child_type
+        define_unique_children!(@loop [$($acc,)*] $name { <$child_name> => $child_name : $child_type $(, $($rest)*)? });
+    };
 
     // 終了条件
-    (@loop [$($acc:literal,)*] $name:ident {}) => {
+    (@loop [$($acc:ident,)*] $name:ident {}) => {
         impl<E> $name<E> {
-            pub const CHILDREN: [&str; [$($acc,)*].len()] = [$($acc,)*];
+            pub const CHILDREN: [&str; [$(stringify!($acc),)*].len()] = [$(stringify!($acc),)*];
         }
     };
 
-    (@impl $name:ident { $child_name:literal => $child_ident:ident : $item_type:tt } ) => {
+    (@impl $name:ident { <$child_name:ident> => $child_ident:ident : $child_type:tt } ) => {
         impl<E: $crate::domtree::HasChildren> $name<E> {
-            pub fn $child_ident(&self) -> ::core::option::Option<$item_type<&$crate::domtree::Element>> {
-                self.element.single_element_by_name($child_name).map(|(el, _)| $item_type::new(el))
+            pub fn $child_ident(&self) -> ::core::option::Option<$child_type<&$crate::domtree::Element>> {
+                self.element.single_element_by_name(stringify!($child_name)).map(|(el, _)| $child_type::new(el))
             }
         }
 
         ::paste::paste! {
             impl<E: $crate::domtree::HasChildren + $crate::domtree::HasChildrenMut> $name<E> {
-                pub fn [<$child_ident _mut>](&mut self) -> $item_type<&mut $crate::domtree::Element> {
-                    let (el, _) = self.element.ensure_element($child_name);
-                    $item_type::new(el)
+                pub fn [<$child_ident _mut>](&mut self) -> $child_type<&mut $crate::domtree::Element> {
+                    let (el, _) = self.element.ensure_element(stringify!($child_name));
+                    $child_type::new(el)
                 }
             }
         }
@@ -223,45 +215,39 @@ macro_rules! impl_unique_child {
 }
 
 // Element をラップした型に対して、中身のリストを取得するメソッドを定義
-macro_rules! impl_child_list {
+macro_rules! define_lists {
     ($name:ident { $($rest:tt)* } ) => {
         // エントリポイント
-        impl_child_list!(@loop [] $name { $($rest)* });
+        define_lists!(@loop [] $name { $($rest)* });
     };
 
-    (@loop [$($acc:literal,)*] $name:ident { $list_name:literal => $list_ident:ident : [$item_type:tt] $(, $($rest:tt)*)? } ) => {
-        // 基本形 "list_name" => list_ident: item_type
-        impl_child_list!(@impl $name { $list_name => $list_ident : [$item_type] });
+    (@loop [$($acc:ident,)*] $name:ident { <$list_name:ident> => $list_ident:ident : [<$item_name:ident> : $item_type:tt] $(, $($rest:tt)*)? } ) => {
+        // 基本形 <list_name> => list_ident: [<item_name>: item_type]
+        define_lists!(@impl $name { <$list_name> => $list_ident : [<$item_name> : $item_type] });
 
         // 残りがあれば再帰的に処理
-        impl_child_list!(@loop [$($acc,)* $list_name,] $name { $($($rest)*)? });
+        define_lists!(@loop [$($acc,)* $list_name,] $name { $($($rest)*)? });
     };
 
-    (@loop [$($acc:literal,)*] $name:ident { $list_name:literal : [$item_type:tt] $(, $($rest:tt)*)? } ) => {
-        // 省略形 "list_name": item_type
-        ::paste::paste! {
-            // 文字列 $list_name をそのまま識別子として扱う
-            impl_child_list!($name { $list_name => [<$list_name>] : [$item_type] });
-        }
-
-        // 残りがあれば再帰的に処理
-        impl_child_list!(@loop [$($acc,)* $list_name,] $name { $($($rest)*)? });
+    (@loop [$($acc:ident,)*] $name:ident { <$list_name:ident> : [<$item_name:ident> : $item_type:tt] $(, $($rest:tt)*)? } ) => {
+        // 省略形 <list_name>: [<item_name>: item_type]
+        define_lists!(@loop [$($acc,)*] $name { <$list_name> => $list_name : [<$item_name> : $item_type] $(, $($rest)*)? });
     };
 
     // 終了条件
-    (@loop [$($acc:literal,)*] $name:ident {}) => {
+    (@loop [$($acc:ident,)*] $name:ident {}) => {
         impl<E> $name<E> {
-            pub const CHILD_LISTS: [&str; [$($acc,)*].len()] = [$($acc,)*];
+            pub const CHILD_LISTS: [&str; [$(stringify!($acc),)*].len()] = [$(stringify!($acc),)*];
         }
     };
 
 
-    (@impl $name:ident { $list_name:literal => $list_ident:ident : [$item_type:tt] } ) => {
+    (@impl $name:ident { <$list_name:ident> => $list_ident:ident : [<$item_name:ident> : $item_type:tt] } ) => {
         impl<E: $crate::domtree::HasChildren> $name<E> {
             pub fn $list_ident(&self) -> ::core::option::Option<$crate::helpers::List<&$crate::domtree::Element, $item_type<&$crate::domtree::Element>>> {
                 self.element
-                    .single_element_by_name($list_name)
-                    .map(|(el, _)| $crate::helpers::List::new(el))
+                    .single_element_by_name(stringify!($list_name))
+                    .map(|(el, _)| $crate::helpers::List::new(el, stringify!($item_name)))
             }
         }
 
@@ -269,8 +255,8 @@ macro_rules! impl_child_list {
             impl<E: $crate::domtree::HasChildren + $crate::domtree::HasChildrenMut> $name<E> {
                 pub fn [<$list_ident _mut>](&mut self) -> $crate::helpers::List<&mut $crate::domtree::Element, $item_type<&mut $crate::domtree::Element>> {
                     let (el, _) = self.element
-                        .ensure_element($list_name);
-                    $crate::helpers::List::new(el)
+                        .ensure_element(stringify!($list_name));
+                    $crate::helpers::List::new(el, stringify!($item_name))
                 }
             }
         }

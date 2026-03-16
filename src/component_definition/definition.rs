@@ -1,30 +1,26 @@
 use crate::Surface;
 
-define_attributes! {
-    "definition" => Definition {
-        "name": String,
-        "category": u32,
-        "type" => type_attr: u32,
-        "mass": f32,
-        "value": u32,
-        "flags": u64,
-        "tags": String,
-    }
-}
-
-impl_unique_child!(Definition {
-    "voxel_min" => voxel_min: VoxelMin,
+define_attributes!(Definition {
+    "name": String,
+    "category": u32,
+    "type" => type_attr: u32,
+    "mass": f32,
+    "value": u32,
+    "flags": u64,
+    "tags": String,
 });
 
-impl_child_list!(Definition {
-    "surfaces" => surfaces: [Surface],
-    "buoyancy_surfaces" => buoyancy_surfaces: [Surface],
+define_unique_children!(Definition {
+    <voxel_min>: VoxelMin,
 });
 
-define_attributes! {
-    "voxel_min" => VoxelMin {
-        "x": i32,
-        "y": i32,
-        "z": i32,
-    }
-}
+define_lists!(Definition {
+    <surfaces>: [<surface>: Surface],
+    <buoyancy_surfaces>: [<surface>: Surface],
+});
+
+define_attributes!(VoxelMin {
+    "x": i32,
+    "y": i32,
+    "z": i32,
+});

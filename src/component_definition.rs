@@ -1,10 +1,7 @@
 mod definition;
 mod surfaces;
 
-use crate::{
-    domtree::{Document, Element, HasChildren, HasChildrenMut},
-    helpers::ListItem,
-};
+use crate::domtree::{Document, Element, HasChildren, HasChildrenMut};
 pub use definition::Definition;
 use quick_xml::Reader;
 use std::{io::BufRead, path::Path};
@@ -44,12 +41,12 @@ impl ComponentDefinition {
 
     pub fn definition(&self) -> Option<Definition<&Element>> {
         self.tree
-            .single_element_by_name(Definition::<&Element>::NAME)
+            .single_element_by_name("definition")
             .map(|(el, _)| Definition::new(el))
     }
 
     pub fn definition_mut(&mut self) -> Definition<&mut Element> {
-        let (el, _) = self.tree.ensure_element(Definition::<&mut Element>::NAME);
+        let (el, _) = self.tree.ensure_element("definition");
         Definition::new(el)
     }
 }
