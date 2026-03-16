@@ -73,7 +73,7 @@ macro_rules! xml_enum {
 }
 
 // Element をラップして属性と型の対応付けをした struct を作成
-macro_rules! define_attributes {
+macro_rules! define_tag {
     ($name:ident { $($body:tt)* }) => {
         // エントリポイント
         #[derive(::core::fmt::Debug)]
@@ -94,7 +94,7 @@ macro_rules! define_attributes {
             }
         }
 
-        define_attributes!(@loop [] $name { $($body)* });
+        define_tag!(@loop [] $name { $($body)* });
     };
 
     (@loop [$($acc:literal,)*] $name:ident {
@@ -110,7 +110,7 @@ macro_rules! define_attributes {
             }
         }
         // 基本形に委譲
-        define_attributes!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
+        define_tag!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
     };
 
     (@loop [$($acc:literal,)*] $name:ident {
@@ -126,22 +126,22 @@ macro_rules! define_attributes {
             }
         }
         // 基本形に委譲
-        define_attributes!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
+        define_tag!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
     };
 
     (@loop [$($acc:literal,)*] $name:ident { $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)? }) => {
         // 基本形 "attr_name" => attr_ident: attr_type
-        define_attributes!(@impl $name { $attr_name => $attr_ident : $attr_type });
+        define_tag!(@impl $name { $attr_name => $attr_ident : $attr_type });
 
         // 残りがあれば再帰的に処理
-        define_attributes!(@loop [$($acc,)* $attr_name,] $name { $($($rest)*)? });
+        define_tag!(@loop [$($acc,)* $attr_name,] $name { $($($rest)*)? });
     };
 
     (@loop [$($acc:literal,)*] $name:ident { $attr_name:literal : $($rest:tt)* }) => {
         // 省略形 "attr_name": attr_type
         ::paste::paste! {
             // 基本形に委譲
-            define_attributes!(@loop [$($acc,)*] $name { $attr_name => [<$attr_name>] : $($rest)* });
+            define_tag!(@loop [$($acc,)*] $name { $attr_name => [<$attr_name>] : $($rest)* });
         }
     };
 

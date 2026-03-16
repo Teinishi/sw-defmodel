@@ -1,6 +1,6 @@
 use crate::Surface;
 
-define_attributes!(Definition {
+define_tag!(Definition {
     "name": String,
     "category": u32,
     "type" => type_attr: u32,
@@ -19,7 +19,7 @@ define_lists!(Definition {
     <buoyancy_surfaces>: [<surface>: Surface],
 });
 
-define_attributes!(VoxelMin {
+define_tag!(VoxelMin {
     "x": i32,
     "y": i32,
     "z": i32,

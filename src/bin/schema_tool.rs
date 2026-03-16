@@ -1,4 +1,5 @@
 // サンプルXMLを読んでスキーマ生成
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
@@ -10,6 +11,41 @@ use sw_defmodel::domtree::{Document, Element, HasChildren};
 
 const MAX_ENUM: usize = 10;
 
+fn main() {
+    generate_schema(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join("vanilla_definitions"),
+        "definition",
+    )
+    .unwrap();
+}
+
+fn generate_schema<P: AsRef<Path> + Debug>(dir: P, tag_name: &str) -> io::Result<()> {
+    let mut schema = Schema::default();
+
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"))
+        {
+            let doc = Document::from_file(path).expect("failed to parse {path:?}");
+            schema.update(
+                doc.single_element_by_name(tag_name)
+                    .expect("failed to get <{tag_name}> in {path:?}")
+                    .0,
+            );
+        }
+    }
+
+    let output_dir = Path::new("tmp");
+    fs::create_dir_all(output_dir)?;
+
+    schema.write(output_dir, tag_name)
+}
+
 const RUST_KEYWORDS: [&str; 50] = [
     "as", "async", "await", "break", "const", "continue", "crate", "else", "enum", "extern",
     "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
@@ -17,6 +53,78 @@ const RUST_KEYWORDS: [&str; 50] = [
     "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final", "macro",
     "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
 ];
+
+fn write_define_tag<W: Write>(
+    f: &mut BufWriter<W>,
+    name: &str,
+    attributes: &[(String, String)],
+) -> io::Result<()> {
+    writeln!(f, "define_tag!({name} {{")?;
+
+    for (key, val_type) in attributes {
+        if RUST_KEYWORDS.contains(&key.as_str()) {
+            write!(f, "    {:?} => {}_attr: {},", key, key, val_type)?;
+        } else {
+            write!(f, "    {:?}: {},", key, val_type)?;
+        }
+    }
+
+    writeln!(f, "}});")
+}
+
+fn write_define_unique_children<W: Write>(
+    f: &mut BufWriter<W>,
+    name: &str,
+    children: &[SchemaChild],
+) -> io::Result<()> {
+    writeln!(f, "define_unique_children!({} {{", name)?;
+
+    for child in children {
+        let child_name = child.get_name().to_snake_case();
+        let child_struct_name = child.get_name().to_upper_camel_case();
+        if RUST_KEYWORDS.contains(&child_name.as_ref()) {
+            writeln!(
+                f,
+                "    <{}> => {}_el: {},",
+                &child_name, &child_name, &child_struct_name
+            )?;
+        } else {
+            writeln!(f, "    <{}>: {},", &child_name, &child_struct_name)?;
+        }
+    }
+
+    writeln!(f, "}});")
+}
+
+fn write_define_lists<W: Write>(
+    f: &mut BufWriter<W>,
+    name: &str,
+    children: &[SchemaChild],
+) -> io::Result<()> {
+    writeln!(f, "define_lists!({} {{", name)?;
+
+    for child in children {
+        let list_name = child.get_name().to_snake_case();
+        let item_name_r = child.schema.children[0].get_name();
+        let item_name = item_name_r.to_snake_case();
+        let item_struct_name = item_name_r.to_upper_camel_case();
+        if RUST_KEYWORDS.contains(&list_name.as_ref()) {
+            writeln!(
+                f,
+                "    <{}> => {}_el: [<{}>: {}],",
+                &list_name, &list_name, &item_name, &item_struct_name
+            )?;
+        } else {
+            writeln!(
+                f,
+                "    <{}>: [<{}>: {}],",
+                &list_name, &item_name, &item_struct_name
+            )?;
+        }
+    }
+
+    writeln!(f, "}});")
+}
 
 #[derive(Default, Debug)]
 struct Schema {
@@ -63,33 +171,27 @@ impl Schema {
         }
     }
 
-    fn write<W: Write>(self, f: &mut BufWriter<W>, tag_name: &str) -> io::Result<()> {
-        use heck::{ToSnakeCase, ToUpperCamelCase};
+    fn write<P: AsRef<Path> + Copy>(self, path: P, tag_name: &str) -> io::Result<()> {
+        let name = tag_name.to_snake_case();
         let struct_name = tag_name.to_upper_camel_case();
 
+        let mut f = BufWriter::new(File::create(path.as_ref().join(name).with_extension("rs"))?);
+
         // 属性定義
-        writeln!(f, "define_attributes! {{")?;
-        writeln!(f, "    {tag_name:?} => {struct_name} {{")?;
-
-        for attr in self.attributes {
-            let key = attr.get_key().to_snake_case();
-            let enum_name = attr.get_key().to_upper_camel_case();
-            if RUST_KEYWORDS.contains(&key.as_ref()) {
-                write!(f, "        {:?} => {}_attr: ", &key, &key)?;
-            } else {
-                write!(f, "        {:?}: ", &key)?;
-            }
-            attr.get_type().fmt(f, "        ", &enum_name)?;
-            writeln!(f, ",")?;
-        }
-
-        writeln!(f, "    }}")?;
-        writeln!(f, "}}")?;
+        write_define_tag(
+            &mut f,
+            &struct_name,
+            &self
+                .attributes
+                .into_iter()
+                .map(|a| a.into_key_type_string("    "))
+                .collect::<Vec<(String, String)>>(),
+        )?;
 
         // 子要素スキャン
         let mut child_lists = Vec::new();
         let mut unique_children = Vec::new();
-        for child in &self.children {
+        for child in self.children {
             if child.max_count == 1
                 && child.schema.attributes.is_empty()
                 && child.schema.children.len() == 1
@@ -97,7 +199,7 @@ impl Schema {
                 // 属性を持たず、単一種類の孫を持っている子要素はリストとみなす
                 child_lists.push(child);
             } else {
-                // リスト要素以外で複数回登場するケースは想定していないので assert
+                // リスト要素以外で複数回登場したり、孫を持ったりするケースは想定していないので assert
                 assert!(
                     child.max_count == 1
                         || (
@@ -106,74 +208,50 @@ impl Schema {
                                 && matches!(child.get_name(), "particle_offset" | "particle_bounds")
                         )
                 );
+                assert!(child.schema.children.is_empty());
                 unique_children.push(child);
             }
         }
 
-        // TODO: 単一子要素を定義
+        // 単一子要素と親の紐づけを定義
+        if !unique_children.is_empty() {
+            writeln!(f, "")?;
+            write_define_unique_children(&mut f, &struct_name, &unique_children)?;
+        }
 
         // 子リストを定義
         if !child_lists.is_empty() {
             writeln!(f, "")?;
-            writeln!(f, "impl_child_list!({} {{", struct_name)?;
-
-            for child in child_lists {
-                let child_name = child.get_name().to_snake_case();
-                let child_struct_name = child.get_name().to_upper_camel_case();
-                if RUST_KEYWORDS.contains(&child_name.as_ref()) {
-                    writeln!(
-                        f,
-                        "    {:?} => {}_el: [{}]",
-                        &child_name, &child_name, &child_struct_name
-                    )?;
-                } else {
-                    writeln!(f, "    {:?}: [{}]", &child_name, &child_struct_name)?;
-                }
-            }
-
-            writeln!(f, "}});")?;
+            write_define_lists(&mut f, &struct_name, &child_lists)?;
         }
 
-        // TODO: 単一子要素、子リストアイテムの write を再帰呼び出し
+        // 単一子要素を定義
+        for child in unique_children {
+            let child_struct_name = child.get_name().to_upper_camel_case();
+
+            writeln!(f, "")?;
+            write_define_tag(
+                &mut f,
+                &child_struct_name,
+                &child
+                    .schema
+                    .attributes
+                    .into_iter()
+                    .map(|a| a.into_key_type_string("    "))
+                    .collect::<Vec<(String, String)>>(),
+            )?;
+        }
+
+        // リストアイテムの write を再帰呼び出し
+        for child in child_lists {
+            for item in child.schema.children {
+                let item_name = item.get_name().to_owned();
+                item.schema.write(path, &item_name)?;
+            }
+        }
 
         Ok(())
     }
-
-    /*fn finalize(self, prefix: Option<&str>) {
-        for attr in self.attributes {
-            if let Some(prefix) = prefix {
-                print!("{prefix}/");
-            }
-            print!(
-                "@{}: ",
-                std::str::from_utf8(&attr.key).expect("invalid utf-8")
-            );
-            println!("{}", attr.get_type());
-        }
-
-        for child in &self.children {
-            assert!(child.min_count <= child.max_count);
-            if let Some(prefix) = prefix {
-                print!("{prefix}/");
-            }
-            println!(
-                "{}: {}",
-                std::str::from_utf8(&child.name).expect("invalid utf-8"),
-                child.get_type()
-            );
-        }
-
-        for child in self.children {
-            let child_name = std::str::from_utf8(&child.name).expect("invalid utf-8");
-            if let Some(prefix) = prefix {
-                child
-                    .schema
-                    .finalize(Some(&format!("{prefix}/{child_name}")));
-            } else {
-                child.schema.finalize(Some(child_name));
-            }
-        }
-    }*/
 }
 
 #[derive(Debug)]
@@ -196,12 +274,13 @@ impl SchemaAttribute {
         }
     }
 
-    fn get_key(&self) -> &str {
-        std::str::from_utf8(&self.key).expect("utf-8 error")
-    }
-
-    fn get_type(self) -> ValueType {
-        ValueType::from_values(self.values)
+    fn into_key_type_string(self, indent: &str) -> (String, String) {
+        let key = String::from_utf8(self.key).expect("utf-8 error");
+        let type_name = key.to_upper_camel_case();
+        (
+            key.to_snake_case(),
+            ValueType::from_values(self.values).as_string(indent, &type_name),
+        )
     }
 }
 
@@ -263,7 +342,8 @@ impl ValueType {
                     | PrimitiveType::I32
                     | PrimitiveType::String
             )
-            && values.iter().all(|v| !v.contains('/')) // スラッシュを含むものはファイルパスとみなして enum 化対象外
+            && values.iter().all(|v| !v.contains('/'))
+        // スラッシュを含むものはファイルパスとみなして enum 化対象外
         {
             Self::Enum(prim, values)
         } else {
@@ -271,50 +351,55 @@ impl ValueType {
         }
     }
 
-    fn fmt<W: Write>(&self, f: &mut BufWriter<W>, indent: &str, type_name: &str) -> io::Result<()> {
-        use heck::ToUpperCamelCase;
+    fn as_string(&self, indent: &str, type_name: &str) -> String {
+        use std::fmt::Write;
 
         match self {
-            Self::Primitive(prim) => write!(f, "{}", prim),
+            Self::Primitive(prim) => format!("{}", prim),
             Self::Enum(val_type, variants) => {
+                let mut f = String::new();
+
                 if matches!(val_type, PrimitiveType::String) {
-                    writeln!(f, "enum {} &str {{", type_name)?;
+                    writeln!(&mut f, "enum {} &str {{", type_name).unwrap();
                 } else {
-                    writeln!(f, "enum {} {} {{", type_name, val_type)?;
+                    writeln!(&mut f, "enum {} {} {{", type_name, val_type).unwrap();
                 }
 
                 for value in variants {
                     match val_type {
                         PrimitiveType::U32 => {
                             let v = value.parse::<u32>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
+                            writeln!(&mut f, "{}    _{} = {},", indent, v, v).unwrap();
                         }
                         PrimitiveType::U64 => {
                             let v = value.parse::<u64>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
+                            writeln!(&mut f, "{}    _{} = {},", indent, v, v).unwrap();
                         }
                         PrimitiveType::I32 => {
                             let v = value.parse::<i32>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
+                            writeln!(&mut f, "{}    _{} = {},", indent, v, v).unwrap();
                         }
                         PrimitiveType::String => {
                             if value.is_empty() {
-                                writeln!(f, "{}    None = {:?},", indent, value)?;
+                                writeln!(&mut f, "{}    None = {:?},", indent, value).unwrap();
                             } else {
                                 writeln!(
-                                    f,
+                                    &mut f,
                                     "{}    {} = {:?},",
                                     indent,
                                     value.to_upper_camel_case(),
                                     value
-                                )?;
+                                )
+                                .unwrap();
                             }
                         }
                         _ => unreachable!(),
                     }
                 }
 
-                write!(f, "{}}}", indent)
+                write!(&mut f, "{}}}", indent).unwrap();
+
+                f
             }
         }
     }
@@ -341,70 +426,4 @@ impl SchemaChild {
     fn get_name(&self) -> &str {
         std::str::from_utf8(&self.name).expect("utf-8 error")
     }
-
-    fn get_type(&self) -> String {
-        if self.min_count == 1 && self.max_count == 1 {
-            "Always".to_owned()
-        } else if self.min_count == 0 && self.max_count == 1 {
-            "Optional".to_owned()
-        } else {
-            "Vec".to_owned()
-        }
-    }
-}
-
-fn generate_schema<P: AsRef<Path> + Debug>(dir: P, tag_name: &str) -> io::Result<()> {
-    let mut schema = Schema::default();
-
-    for entry in std::fs::read_dir(&dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"))
-        {
-            let doc = Document::from_file(path).expect("failed to parse {path:?}");
-            schema.update(
-                doc.single_element_by_name(tag_name)
-                    .expect("failed to get <{tag_name}> in {path:?}")
-                    .0,
-            );
-        }
-    }
-
-    let output_path = Path::new("tmp").join(tag_name).with_extension("rs");
-
-    if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    /*if output_path.exists() {
-        print!(
-            "File '{}' already exists. Overwrite? (y/n): ",
-            output_path.display()
-        );
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        let input = input.trim().to_lowercase();
-        if input != "y" && input != "yes" {
-            println!("Canceled.");
-            return Ok(());
-        }
-    }*/
-
-    let file = File::create(&output_path)?;
-    schema.write(&mut BufWriter::new(file), tag_name)
-}
-
-fn main() {
-    generate_schema(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("test_data")
-            .join("vanilla_definitions"),
-        "definition",
-    )
-    .unwrap();
 }

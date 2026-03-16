@@ -1,4 +1,4 @@
-define_attributes!(Surface {
+define_tag!(Surface {
     "orientation": enum SurfaceOrientation u32 {
         XPos = 0,
         XNeg = 1,
