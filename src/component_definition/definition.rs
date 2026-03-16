@@ -1,9 +1,9 @@
 use crate::Surface;
 
-element_wrapper! {
+define_attributes! {
     "definition" => Definition {
-        "name" => name: String,
-        "category" => category: u32,
+        "name": String,
+        "category": u32,
     }
 }
 

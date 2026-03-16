@@ -1,6 +1,6 @@
 // XML属性値を enum として扱えるようにするマクロ
 macro_rules! xml_enum {
-    (enum $name:ident : &str {
+    (enum $name:ident &str {
         $($variant:ident = $val:expr),* $(,)?
     }) => {
         xml_enum!(@define $name { $($variant = $val),* });
@@ -17,7 +17,7 @@ macro_rules! xml_enum {
         }
     };
 
-    (enum $name:ident : $val_type:ty {
+    (enum $name:ident $val_type:ty {
         $($variant:ident = $val:expr),* $(,)?
     }) => {
         xml_enum!(@define $name { $($variant = $val),* });
@@ -73,7 +73,7 @@ macro_rules! xml_enum {
 }
 
 // Element をラップして属性と型の対応付けをした struct を作成
-macro_rules! element_wrapper {
+macro_rules! define_attributes {
     ($tag_name:literal => $name:ident { $($body:tt)* }) => {
         // エントリポイント
         #[derive(::core::fmt::Debug)]
@@ -89,26 +89,39 @@ macro_rules! element_wrapper {
             }
         }
 
-        element_wrapper!(@loop [] $name { $($body)* });
+        define_attributes!(@loop [] $name { $($body)* });
+    };
+
+    (@loop [$($acc:literal,)*] $name:ident {
+        $attr_name:literal => $attr_ident:ident : enum $enum_name:ident $val_type:ty {
+            $($variant:ident = $val:expr),* $(,)?
+        }
+        $(, $($rest:tt)*)?
+    }) => {
+        // attr_type が enum の場合
+        xml_enum! {
+            enum $enum_name $val_type {
+                $($variant = $val),*
+            }
+        }
+        // 基本形に委譲
+        define_attributes!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
     };
 
     (@loop [$($acc:literal,)*] $name:ident { $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)? }) => {
         // 基本形 "attr_name" => attr_ident: attr_type
-        element_wrapper!(@impl $name { $attr_name => $attr_ident : $attr_type });
+        define_attributes!(@impl $name { $attr_name => $attr_ident : $attr_type });
 
         // 残りがあれば再帰的に処理
-        element_wrapper!(@loop [$($acc,)* $attr_name,] $name { $($($rest)*)? });
+        define_attributes!(@loop [$($acc,)* $attr_name,] $name { $($($rest)*)? });
     };
 
-    (@loop [$($acc:literal,)*] $name:ident { $attr_name:literal : $attr_type:ty $(, $($rest:tt)*)? }) => {
+    (@loop [$($acc:literal,)*] $name:ident { $attr_name:literal : $($rest:tt)* }) => {
         // 省略形 "attr_name": attr_type
         ::paste::paste! {
-            // 文字列 $attr_name をそのまま識別子として扱う
-            element_wrapper!(@impl $name { $attr_name => [<$attr_name>] : $attr_type });
+            // 基本形に委譲
+            define_attributes!(@loop [$($acc,)*] $name { $attr_name => [<$attr_name>] : $($rest)* });
         }
-
-        // 残りがあれば再帰的に処理
-        element_wrapper!(@loop [$($acc,)* $attr_name,] $name { $($($rest)*)? });
     };
 
     // 終了条件
