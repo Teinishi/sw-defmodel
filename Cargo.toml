@@ -2,7 +2,7 @@
 name = "sw-defmodel"
 version = "0.1.0"
 edition = "2024"
-description = "XML wrapper for Stormworks component and/or vehicle definitions."
+description = "A Rust library for reading and manipulating Stormworks data files with typed XML support."
 license = "MIT"
 
 [features]
