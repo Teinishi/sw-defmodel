@@ -1,6 +1,13 @@
 // サンプルXMLを読んでスキーマ生成
-use std::{collections::HashMap, fmt::Display, path::Path};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    fs::{self, File},
+    io::{self, BufWriter, Write},
+    path::Path,
+};
 use sw_defmodel::domtree::{Document, Element, HasChildren};
+
 const MAX_ENUM: usize = 10;
 
 #[derive(Default, Debug)]
@@ -46,6 +53,24 @@ impl Schema {
             c.max_count = c.max_count.max(count);
             c.min_count = c.min_count.min(count);
         }
+    }
+
+    fn write<W: Write>(self, f: &mut BufWriter<W>, tag_name: &str) -> io::Result<()> {
+        use heck::ToUpperCamelCase;
+        let struct_name = tag_name.to_upper_camel_case();
+
+        writeln!(f, "element_wrapper! {{")?;
+        writeln!(f, "    {tag_name:?} => {struct_name} {{")?;
+
+        for attr in self.attributes {
+            write!(f, "        {:?}: ", attr.get_key())?;
+            writeln!(f, "{},", attr.get_type())?;
+        }
+
+        writeln!(f, "    }}")?;
+        writeln!(f, "}}")?;
+
+        Ok(())
     }
 
     fn finalize(self, prefix: Option<&str>) {
@@ -105,6 +130,10 @@ impl SchemaAttribute {
         }
     }
 
+    fn get_key(&self) -> &str {
+        std::str::from_utf8(&self.key).expect("utf-8 error")
+    }
+
     fn get_type(self) -> ValueType {
         if self.values.iter().all(|v| v.parse::<bool>().is_ok()) {
             ValueType::Bool
@@ -144,6 +173,7 @@ impl Display for ValueType {
             Self::I32 => write!(f, "i32"),
             Self::F32 => write!(f, "f32"),
             Self::Enum(values) => {
+                // TODO: マクロを直したらここも直す
                 if let Some((last, rest)) = values.split_last() {
                     for v in rest {
                         write!(f, "{v:?} | ")?;
@@ -187,31 +217,58 @@ impl SchemaChild {
     }
 }
 
-fn main() {
-    let definitions_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("test_data")
-        .join("vanilla_definitions");
-
+fn generate_schema<P: AsRef<Path> + Debug>(dir: P, tag_name: &str) -> io::Result<()> {
     let mut schema = Schema::default();
 
-    for entry in std::fs::read_dir(&definitions_dir)
-        .unwrap_or_else(|e| panic!("failed to read dir {definitions_dir:?}: {e}"))
-    {
-        let entry =
-            entry.unwrap_or_else(|e| panic!("failed to read entry in {definitions_dir:?}: {e}"));
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
         let path = entry.path();
         if path
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"))
         {
-            let doc = Document::from_file(path).expect("failed to read {path:?}");
+            let doc = Document::from_file(path).expect("failed to parse {path:?}");
             schema.update(
-                doc.single_element_by_name("definition")
-                    .expect("failed to get <definition> in {path:?}")
+                doc.single_element_by_name(tag_name)
+                    .expect("failed to get <{tag_name}> in {path:?}")
                     .0,
             );
         }
     }
 
-    schema.finalize(None);
+    let output_path = Path::new("tmp").join(tag_name).with_extension("rs");
+
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    /*if output_path.exists() {
+        print!(
+            "File '{}' already exists. Overwrite? (y/n): ",
+            output_path.display()
+        );
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        let input = input.trim().to_lowercase();
+        if input != "y" && input != "yes" {
+            println!("Canceled.");
+            return Ok(());
+        }
+    }*/
+
+    let file = File::create(&output_path)?;
+    schema.write(&mut BufWriter::new(file), tag_name)
+}
+
+fn main() {
+    generate_schema(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join("vanilla_definitions"),
+        "definition",
+    )
+    .unwrap();
 }

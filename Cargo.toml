@@ -5,6 +5,15 @@ edition = "2024"
 description = "XML wrapper for Stormworks component and/or vehicle definitions."
 license = "MIT"
 
+[features]
+tool = ["heck"]
+
 [dependencies]
+heck = { version = "0.5.0", optional = true }
 paste = "1.0.15"
 quick-xml = "0.39.2"
+
+[[bin]]
+name = "schema_tool"
+path = "src/bin/schema_tool.rs"
+required-features = ["tool"]
