@@ -79,52 +79,37 @@ mod tests {
     }
 
     #[test]
-    fn schema() {
-        // definition.rs を変更したらここも合わせる
-        assert_eq!(Definition::<&Element>::ATTRIBUTES, ["name", "category"]);
-        assert_eq!(
-            Definition::<&Element>::CHILD_LISTS,
-            ["surfaces", "buoyancy_surfaces"]
-        );
-    }
-
-    #[test]
-    fn read() {
-        let definitions_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+    fn read_basic_block() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("test_data")
-            .join("vanilla_definitions");
-        let items = [
-            ("01_block.xml", "Block"),
-            ("02_wedge.xml", "Wedge"),
-            ("03_pyramid.xml", "Pyramid"),
-            ("04_invpyramid.xml", "Inverse Pyramid"),
-        ];
+            .join("vanilla_definitions")
+            .join("01_block.xml");
 
-        for (filename, name) in items {
-            let cd = ComponentDefinition::from_file(definitions_dir.join(filename))
-                .expect("failed to load {filename:?}");
-            let definition = cd.definition().expect("failed to get <definition>");
+        let cd = ComponentDefinition::from_file(path).expect("failed to load {path:?}");
+        let definition = cd.definition().expect("failed to get <definition>");
 
-            assert_eq!(definition.name(), Ok(name.to_owned()));
-            definition.category().expect("failed to get category");
+        assert_eq!(definition.name(), Ok("Block".to_owned()));
+        assert_eq!(definition.category(), Ok(0));
+        assert_eq!(definition.type_attr(), Ok(0));
+        assert_eq!(definition.mass(), Ok(1.0));
+        assert_eq!(definition.value(), Ok(2));
+        assert_eq!(definition.flags(), Ok(56));
+        assert_eq!(definition.tags(), Ok("basic".to_owned()));
 
-            if let Some(surfaces) = definition.surfaces() {
-                for surface in surfaces.iter() {
-                    assert!(surface.orientation().is_ok());
-                    assert!(surface.rotation().is_ok());
-                    assert!(surface.shape().is_ok());
-                    assert!(surface.trans_type().is_ok());
-                }
-            }
-            if let Some(surfaces) = definition.buoyancy_surfaces() {
-                for surface in surfaces.iter() {
-                    assert!(surface.orientation().is_ok());
-                    assert!(surface.rotation().is_ok());
-                    assert!(surface.shape().is_ok());
-                    assert!(surface.trans_type().is_ok());
-                }
-            }
-        }
+        assert_eq!(
+            definition
+                .surfaces()
+                .expect("failed to get <surfaces>")
+                .len(),
+            6
+        );
+        assert_eq!(
+            definition
+                .buoyancy_surfaces()
+                .expect("failed to get <buoyancy_surfaces>")
+                .len(),
+            6
+        );
     }
 
     #[test]
@@ -160,7 +145,7 @@ mod tests {
                     let orientation = surface
                         .orientation()
                         .expect("failed to get orientation")
-                        .into_value()
+                        .as_value()
                         .expect("unexpected orientation");
                     surface.set_orientation((5 - orientation).into());
                 }

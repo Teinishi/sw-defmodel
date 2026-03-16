@@ -23,7 +23,7 @@ macro_rules! xml_enum {
         xml_enum!(@define $name { $($variant = $val),* });
 
         impl $name {
-            pub fn into_value(&self) -> ::core::option::Option<$val_type> {
+            pub fn as_value(&self) -> ::core::option::Option<$val_type> {
                 match self {
                     $(Self::$variant => ::core::option::Option::Some($val)),*,
                     Self::Unknown(_) => ::core::option::Option::None,
@@ -90,6 +90,22 @@ macro_rules! define_attributes {
         }
 
         define_attributes!(@loop [] $name { $($body)* });
+    };
+
+    (@loop [$($acc:literal,)*] $name:ident {
+        $attr_name:literal => $attr_ident:ident : enum $enum_name:ident &str {
+            $($variant:ident = $val:expr),* $(,)?
+        }
+        $(, $($rest:tt)*)?
+    }) => {
+        // attr_type が enum (&str) の場合
+        xml_enum! {
+            enum $enum_name &str {
+                $($variant = $val),*
+            }
+        }
+        // 基本形に委譲
+        define_attributes!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
     };
 
     (@loop [$($acc:literal,)*] $name:ident {
