@@ -1,5 +1,7 @@
 # sw-defmodel
 
+**THIS IS WIP**
+
 Stormworks save files, asset files, and definitions are stored in XML and proprietary binary formats, which can be cumbersome to manipulate directly.
 This library provides a safe and ergonomic wrapper for working with Stormworks data structures programmatically.
 

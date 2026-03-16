@@ -27,6 +27,7 @@ fn main() {
 #[derive(Default, Debug)]
 struct DefinitionTagRule {
     vec3i: bool,
+    vec3f: bool,
 }
 
 impl SchemaWriteRule for DefinitionTagRule {
@@ -37,12 +38,51 @@ impl SchemaWriteRule for DefinitionTagRule {
     ) -> Option<ChildElementType> {
         if tag_name == "definition" {
             match child.get_name() {
-                "voxel_min" | "voxel_max" | "voxel_physics_min" | "voxel_physics_max" => {
+                "voxel_min"
+                | "voxel_max"
+                | "voxel_physics_min"
+                | "voxel_physics_max"
+                | "voxel_location_child"
+                | "light_position"
+                | "dynamic_body_position"
+                | "compartment_sample_pos"
+                | "seat_front"
+                | "seat_up"
+                | "light_forward"
+                | "door_normal"
+                | "door_side"
+                | "door_up"
+                | "door_base_pos"
+                | "connector_axis"
+                | "connector_up"
+                | "particle_direction"
+                | "seat_exit_position"
+                | "weapon_breech_position"
+                | "weapon_breech_normal" => {
                     self.vec3i = true;
                     Some(ChildElementType::NamedUnique("Vec3i"))
                 }
-                // Keep Active Block だけ particle_offset と particle_bounds が2つあるけど無視
-                "particle_offset" | "particle_bounds" => Some(ChildElementType::Unique),
+                "bb_physics_min"
+                | "bb_physics_max"
+                | "constraint_pos_parent"
+                | "constraint_pos_child"
+                | "force_dir"
+                | "light_color"
+                | "door_size"
+                | "dynamic_rotation_axes"
+                | "dynamic_side_axis"
+                | "magnet_offset"
+                | "seat_offset"
+                | "seat_camera"
+                | "seat_render"
+                | "particle_offset"
+                | "particle_bounds"
+                | "rope_hook_offset"
+                | "weapon_cart_position"
+                | "weapon_cart_velocity" => {
+                    self.vec3f = true;
+                    Some(ChildElementType::NamedUnique("Vec3f"))
+                }
                 _ => None,
             }
         } else {
@@ -57,6 +97,14 @@ impl SchemaWriteRule for DefinitionTagRule {
             writeln!(f, "    \"x\": i32,")?;
             writeln!(f, "    \"y\": i32,")?;
             writeln!(f, "    \"z\": i32,")?;
+            writeln!(f, "}});")?;
+        }
+        if self.vec3f {
+            writeln!(f, "")?;
+            writeln!(f, "define_tag!(Vec3f {{")?;
+            writeln!(f, "    \"x\": f32,")?;
+            writeln!(f, "    \"y\": f32,")?;
+            writeln!(f, "    \"z\": f32,")?;
             writeln!(f, "}});")?;
         }
 
@@ -217,7 +265,9 @@ fn write_define_lists<W: Write>(
 #[derive(Debug)]
 enum ChildElementType {
     NamedUnique(&'static str),
+    #[expect(dead_code)]
     Unique,
+    #[expect(dead_code)]
     List,
 }
 
