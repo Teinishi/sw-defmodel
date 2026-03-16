@@ -25,22 +25,63 @@ fn main() {
 
 // <definition> のスキーマの上書きルール
 #[derive(Default, Debug)]
-struct DefinitionTagRule;
+struct DefinitionTagRule {
+    vec3i: bool,
+}
 
 impl SchemaWriteRule for DefinitionTagRule {
-    fn before_define_tag(&mut self, f: &mut BufWriter<File>, name: &str, schema: &Schema) -> bool {
-        false
+    /*fn before_define_attribute(&mut self, attribute: &SchemaAttribute) -> Option<String> {
+        match name {
+            "voxel_min" => {
+                //write_define_tag(f, "Vec3i", &[("x", "i32"), ("x", "i32"), ("z", "i32")])?;
+                self.vec3i = true;
+                Some("Vec3i".to_owned())
+            }
+            _ => None,
+        }
+        None
+    }*/
+
+    fn before_scan_child(
+        &mut self,
+        tag_name: &str,
+        child: &SchemaChild,
+    ) -> Option<ChildElementType> {
+        if tag_name == "definition"
+            && matches!(child.get_name(), "particle_offset" | "particle_bounds")
+        {
+            // Keep Active Block だけ particle_offset と particle_bounds が2つあるけど無視
+            Some(ChildElementType::Unique)
+        } else {
+            None
+        }
     }
 }
 
 trait SchemaWriteRule {
-    fn before_define_tag(&mut self, f: &mut BufWriter<File>, name: &str, schema: &Schema) -> bool;
+    #[expect(unused_variables)]
+    fn before_define_attribute(
+        &mut self,
+        tag_name: &str,
+        attribute: &SchemaAttribute,
+    ) -> Option<String> {
+        None
+    }
+
+    #[expect(unused_variables)]
+    fn before_scan_child(
+        &mut self,
+        tag_name: &str,
+        child: &SchemaChild,
+    ) -> Option<ChildElementType> {
+        None
+    }
 }
 
 fn generate_schema<P: AsRef<Path> + Debug, R: SchemaWriteRule>(
     dirs: &[P],
     tag_name: &str,
-    tag_rule: &mut R,
+    rule: &mut R,
 ) -> io::Result<()> {
     let mut schema = Schema::default();
 
@@ -65,7 +106,8 @@ fn generate_schema<P: AsRef<Path> + Debug, R: SchemaWriteRule>(
     let output_dir = Path::new("tmp").join(tag_name);
     fs::create_dir_all(&output_dir)?;
 
-    schema.write(output_dir, tag_name, tag_rule)
+    schema.write(output_dir, tag_name, rule)
+    // rule.finalize()
 }
 
 const RUST_KEYWORDS: [&str; 50] = [
@@ -157,6 +199,12 @@ fn write_define_lists<W: Write>(
     writeln!(f, "}});")
 }
 
+#[derive(Debug)]
+enum ChildElementType {
+    Unique,
+    List,
+}
+
 #[derive(Default, Debug)]
 struct Schema {
     attributes: Vec<SchemaAttribute>,
@@ -206,96 +254,101 @@ impl Schema {
         self,
         path: P,
         tag_name: &str,
-        tag_rule: &mut R,
+        rule: &mut R,
     ) -> io::Result<()> {
         let name = tag_name.to_snake_case();
+        let struct_name = tag_name.to_upper_camel_case();
+
         let mut f = BufWriter::new(File::create(
             path.as_ref().join(&name).with_extension("rs"),
         )?);
 
-        let skip = tag_rule.before_define_tag(&mut f, tag_name, &self);
-        if !skip {
-            let struct_name = tag_name.to_upper_camel_case();
+        // 属性定義
+        write_define_tag(
+            &mut f,
+            &struct_name,
+            &self
+                .attributes
+                .into_iter()
+                .map(|a| {
+                    let override_typename = rule.before_define_attribute(tag_name, &a);
+                    let mut entry = a.into_key_type_string("    ");
+                    if let Some(n) = override_typename {
+                        entry.1 = n;
+                    }
+                    entry
+                })
+                .collect::<Vec<(String, String)>>(),
+        )?;
 
-            // 属性定義
+        // 子要素スキャン
+        let mut child_lists = Vec::new();
+        let mut unique_children = Vec::new();
+        for child in self.children {
+            let override_child_type = rule.before_scan_child(tag_name, &child);
+            if matches!(override_child_type, Some(ChildElementType::List))
+                || (child.max_count == 1
+                    && child.schema.attributes.is_empty()
+                    && child.schema.children.len() == 1)
+            {
+                // 属性を持たず、単一種類の孫を持っている子要素はリストとみなす
+                child_lists.push(child);
+            } else if matches!(override_child_type, Some(ChildElementType::Unique))
+                || child.max_count == 1
+            {
+                // 単一子要素
+                unique_children.push(child);
+            } else {
+                // 想定外のパターン
+                panic!(
+                    "Unexpected child element <{}> found in <{}>",
+                    child.get_name(),
+                    tag_name
+                );
+            }
+        }
+
+        // 単一子要素と親の紐づけを定義
+        if !unique_children.is_empty() {
+            writeln!(f, "")?;
+            write_define_unique_children(&mut f, &struct_name, &unique_children)?;
+        }
+
+        // 子リストを定義
+        if !child_lists.is_empty() {
+            writeln!(f, "")?;
+            write_define_lists(&mut f, &struct_name, &child_lists)?;
+        }
+
+        // 単一子要素を定義
+        for child in unique_children {
+            let child_name = child.get_name().to_owned();
+            let child_struct_name = child_name.to_upper_camel_case();
+            writeln!(f, "")?;
             write_define_tag(
                 &mut f,
-                &struct_name,
-                &self
+                &child_struct_name,
+                &child
+                    .schema
                     .attributes
                     .into_iter()
-                    .map(|a| a.into_key_type_string("    "))
+                    .map(|a| {
+                        let override_typename = rule.before_define_attribute(&child_name, &a);
+                        let mut entry = a.into_key_type_string("    ");
+                        if let Some(n) = override_typename {
+                            entry.1 = n;
+                        }
+                        entry
+                    })
                     .collect::<Vec<(String, String)>>(),
             )?;
+        }
 
-            // 子要素スキャン
-            let mut child_lists = Vec::new();
-            let mut unique_children = Vec::new();
-            for child in self.children {
-                if child.max_count == 1
-                    && child.schema.attributes.is_empty()
-                    && child.schema.children.len() == 1
-                {
-                    // 属性を持たず、単一種類の孫を持っている子要素はリストとみなす
-                    child_lists.push(child);
-                } else {
-                    // リスト要素以外で複数回登場したり、孫を持ったりするケースは想定していないので assert
-                    assert!(
-                        child.max_count == 1
-                            || (
-                                // Keep Active Block だけなぜか particle_offset と particle_bounds を2つ持つ
-                                tag_name == "definition"
-                                    && matches!(
-                                        child.get_name(),
-                                        "particle_offset" | "particle_bounds"
-                                    )
-                            )
-                    );
-                    assert!(child.schema.children.is_empty());
-                    unique_children.push(child);
-                }
-            }
-
-            // 単一子要素と親の紐づけを定義
-            if !unique_children.is_empty() {
-                writeln!(f, "")?;
-                write_define_unique_children(&mut f, &struct_name, &unique_children)?;
-            }
-
-            // 子リストを定義
-            if !child_lists.is_empty() {
-                writeln!(f, "")?;
-                write_define_lists(&mut f, &struct_name, &child_lists)?;
-            }
-
-            // 単一子要素を定義
-            for child in unique_children {
-                let skip = tag_rule.before_define_tag(&mut f, child.get_name(), &child.schema);
-                if skip {
-                    continue;
-                }
-
-                let child_name = child.get_name();
-                let child_struct_name = child_name.to_upper_camel_case();
-                writeln!(f, "")?;
-                write_define_tag(
-                    &mut f,
-                    &child_struct_name,
-                    &child
-                        .schema
-                        .attributes
-                        .into_iter()
-                        .map(|a| a.into_key_type_string("    "))
-                        .collect::<Vec<(String, String)>>(),
-                )?;
-            }
-
-            // リストアイテムの write を再帰呼び出し
-            for child in child_lists {
-                for item in child.schema.children {
-                    let item_name = item.get_name().to_owned();
-                    item.schema.write(path.as_ref(), &item_name, tag_rule)?;
-                }
+        // リストアイテムの write を再帰呼び出し
+        for child in child_lists {
+            for item in child.schema.children {
+                let item_name = item.get_name().to_owned();
+                item.schema.write(path.as_ref(), &item_name, rule)?;
             }
         }
 
