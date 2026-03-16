@@ -64,28 +64,77 @@ impl Schema {
     }
 
     fn write<W: Write>(self, f: &mut BufWriter<W>, tag_name: &str) -> io::Result<()> {
-        use heck::ToUpperCamelCase;
+        use heck::{ToSnakeCase, ToUpperCamelCase};
         let struct_name = tag_name.to_upper_camel_case();
 
+        // 属性定義
         writeln!(f, "define_attributes! {{")?;
         writeln!(f, "    {tag_name:?} => {struct_name} {{")?;
 
         for attr in self.attributes {
-            let key = attr.get_key();
-            if RUST_KEYWORDS.contains(&key) {
-                write!(f, "        {:?} => {}_attr: ", key, key)?;
+            let key = attr.get_key().to_snake_case();
+            let enum_name = attr.get_key().to_upper_camel_case();
+            if RUST_KEYWORDS.contains(&key.as_ref()) {
+                write!(f, "        {:?} => {}_attr: ", &key, &key)?;
             } else {
-                write!(f, "        {:?}: ", key)?;
+                write!(f, "        {:?}: ", &key)?;
             }
-            let ident = std::str::from_utf8(&attr.key)
-                .expect("utf-8 error")
-                .to_upper_camel_case();
-            attr.get_type().fmt(f, "        ", &ident)?;
+            attr.get_type().fmt(f, "        ", &enum_name)?;
             writeln!(f, ",")?;
         }
 
         writeln!(f, "    }}")?;
         writeln!(f, "}}")?;
+
+        // 子要素スキャン
+        let mut child_lists = Vec::new();
+        let mut unique_children = Vec::new();
+        for child in &self.children {
+            if child.max_count == 1
+                && child.schema.attributes.is_empty()
+                && child.schema.children.len() == 1
+            {
+                // 属性を持たず、単一種類の孫を持っている子要素はリストとみなす
+                child_lists.push(child);
+            } else {
+                // リスト要素以外で複数回登場するケースは想定していないので assert
+                assert!(
+                    child.max_count == 1
+                        || (
+                            // Keep Active Block だけなぜか particle_offset と particle_bounds を2つ持つ
+                            tag_name == "definition"
+                                && matches!(child.get_name(), "particle_offset" | "particle_bounds")
+                        )
+                );
+                unique_children.push(child);
+            }
+        }
+
+        // TODO: 単一子要素を定義
+
+        // 子リストを定義
+        if !child_lists.is_empty() {
+            writeln!(f, "")?;
+            writeln!(f, "impl_child_list!({} {{", struct_name)?;
+
+            for child in child_lists {
+                let child_name = child.get_name().to_snake_case();
+                let child_struct_name = child.get_name().to_upper_camel_case();
+                if RUST_KEYWORDS.contains(&child_name.as_ref()) {
+                    writeln!(
+                        f,
+                        "    {:?} => {}_el: [{}]",
+                        &child_name, &child_name, &child_struct_name
+                    )?;
+                } else {
+                    writeln!(f, "    {:?}: [{}]", &child_name, &child_struct_name)?;
+                }
+            }
+
+            writeln!(f, "}});")?;
+        }
+
+        // TODO: 単一子要素、子リストアイテムの write を再帰呼び出し
 
         Ok(())
     }
@@ -214,6 +263,7 @@ impl ValueType {
                     | PrimitiveType::I32
                     | PrimitiveType::String
             )
+            && values.iter().all(|v| !v.contains('/')) // スラッシュを含むものはファイルパスとみなして enum 化対象外
         {
             Self::Enum(prim, values)
         } else {
@@ -286,6 +336,10 @@ impl SchemaChild {
             max_count: 0,
             schema: Schema::default(),
         }
+    }
+
+    fn get_name(&self) -> &str {
+        std::str::from_utf8(&self.name).expect("utf-8 error")
     }
 
     fn get_type(&self) -> String {
