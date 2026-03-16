@@ -45,12 +45,12 @@ impl ComponentDefinition {
     pub fn definition(&self) -> Option<Definition<&Element>> {
         self.tree
             .single_element_by_name(Definition::<&Element>::NAME)
-            .map(|(el, _)| Definition::from_element(el))
+            .map(|(el, _)| Definition::new(el))
     }
 
     pub fn definition_mut(&mut self) -> Definition<&mut Element> {
         let (el, _) = self.tree.ensure_element(Definition::<&mut Element>::NAME);
-        Definition::from_element(el)
+        Definition::new(el)
     }
 }
 
@@ -95,6 +95,10 @@ mod tests {
         assert_eq!(definition.value(), Ok(2));
         assert_eq!(definition.flags(), Ok(56));
         assert_eq!(definition.tags(), Ok("basic".to_owned()));
+        assert_eq!(
+            definition.voxel_min().map(|v| (v.x(), v.y(), v.z())),
+            Some((Ok(0), Ok(0), Ok(0)))
+        );
 
         assert_eq!(
             definition

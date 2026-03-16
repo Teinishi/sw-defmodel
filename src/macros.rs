@@ -81,6 +81,13 @@ macro_rules! define_attributes {
             pub(crate) element: E,
         }
 
+        impl<E> $name<E> {
+            #[allow(dead_code)] // なぜかわからないけど warn が出る
+            pub(crate) fn new(element: E) -> Self {
+                Self { element }
+            }
+        }
+
         impl<E> $crate::helpers::ListItem<E> for $name<E> {
             const NAME: &'static str = $tag_name;
 
@@ -162,6 +169,57 @@ macro_rules! define_attributes {
             }
         }
     };
+}
+
+// Element をラップした型に対して、中身の単一子要素を取得するメソッドを定義
+macro_rules! impl_unique_child {
+    ($name:ident { $($rest:tt)* }) => {
+        // エントリポイント
+        impl_unique_child!(@loop [] $name { $($rest)* });
+    };
+
+    (@loop [$($acc:literal,)*] $name:ident { $child_name:literal => $child_ident:ident : $child_type:tt $(, $($rest:tt)*)? } ) => {
+        // 基本形 "child_name" => child_ident: item_type
+        impl_unique_child!(@impl $name { $child_name => $child_ident : $child_type });
+
+        // 残りがあれば再帰的に処理
+        impl_unique_child!(@loop [$($acc,)* $child_name,] $name { $($($rest)*)? });
+    };
+
+    /*(@loop [$($acc:literal,)*] $name:ident { $child_name:literal : $item_type:ty $(, $($rest:tt)*)? } ) => {
+        // 省略形 "child_name": item_type
+        ::paste::paste! {
+            // 文字列 $child_name をそのまま識別子として扱う
+            impl_unique_child!($name { $child_name => [<$child_name>] : $item_type });
+        }
+
+        // 残りがあれば再帰的に処理
+        impl_unique_child!(@loop [$($acc,)* $child_name,] $name { $($($rest)*)? });
+    };*/
+
+    // 終了条件
+    (@loop [$($acc:literal,)*] $name:ident {}) => {
+        impl<E> $name<E> {
+            pub const CHILDREN: [&str; [$($acc,)*].len()] = [$($acc,)*];
+        }
+    };
+
+    (@impl $name:ident { $child_name:literal => $child_ident:ident : $item_type:tt } ) => {
+        impl<E: $crate::domtree::HasChildren> $name<E> {
+            pub fn $child_ident(&self) -> ::core::option::Option<$item_type<&$crate::domtree::Element>> {
+                self.element.single_element_by_name($child_name).map(|(el, _)| $item_type::new(el))
+            }
+        }
+
+        ::paste::paste! {
+            impl<E: $crate::domtree::HasChildren + $crate::domtree::HasChildrenMut> $name<E> {
+                pub fn [<$child_ident _mut>](&mut self) -> $item_type<&mut $crate::domtree::Element> {
+                    let (el, _) = self.element.ensure_element($child_name);
+                    $item_type::new(el)
+                }
+            }
+        }
+    }
 }
 
 // Element をラップした型に対して、中身のリストを取得するメソッドを定義
