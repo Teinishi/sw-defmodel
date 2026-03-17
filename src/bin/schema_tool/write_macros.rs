@@ -13,6 +13,10 @@ const RUST_KEYWORDS: [&str; 50] = [
     "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
 ];
 
+pub(super) trait WriteWithIndent {
+    fn write<W: Write>(&self, f: &mut W, indent: &str) -> io::Result<()>;
+}
+
 // define_tag マクロで属性定義
 pub(super) fn write_define_tag<W: Write, R: SchemaWriteRule>(
     f: &mut BufWriter<W>,
@@ -24,17 +28,18 @@ pub(super) fn write_define_tag<W: Write, R: SchemaWriteRule>(
     writeln!(f, "define_tag!({name} {{")?;
 
     for attr in attributes {
-        let override_typename = rule.before_define_attribute(tag_name, &attr);
-        let (mut key, val_type) = attr.into_key_type_string("    ");
-        if let Some(n) = override_typename {
-            key = n;
-        }
+        let override_type = rule.before_define_attribute(tag_name, &attr);
+        let key = attr.get_key();
 
         if RUST_KEYWORDS.contains(&key.as_str()) {
-            writeln!(f, "    {:?} => {}_attr: {},", key, key, val_type)?;
+            write!(f, "    {:?} => {}_attr: ", key, key)?;
         } else {
-            writeln!(f, "    {:?}: {},", key, val_type)?;
+            write!(f, "    {:?}: ", key)?;
         }
+
+        let value_type = override_type.unwrap_or_else(|| attr.get_value_type(R::MAX_ENUM));
+        value_type.write(f, "    ")?;
+        writeln!(f, ",")?;
     }
 
     writeln!(f, "}});")

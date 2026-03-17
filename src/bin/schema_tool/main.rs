@@ -11,8 +11,6 @@ use std::{
 };
 use write_rule::{ChildElementType, SchemaWriteRule};
 
-const MAX_ENUM: usize = 10;
-
 fn main() -> io::Result<()> {
     // test_data/vanilla_definitions から <definition> のスキーマを生成
     analyze_schema(
@@ -34,9 +32,11 @@ struct DefinitionTagRule {
 }
 
 impl SchemaWriteRule for DefinitionTagRule {
+    const MAX_ENUM: usize = 10; // 属性値の自動判定で enum にするしきい値
+
     fn before_scan_child(
         &mut self,
-        tag_name: &str,
+        _tag_name: &str,
         child: &SchemaChild,
     ) -> Option<ChildElementType> {
         // x, y, z 属性だけを持ち、整数または浮動小数点数の値は入っているものは Vec3i, Vec3f で定義
@@ -44,7 +44,7 @@ impl SchemaWriteRule for DefinitionTagRule {
         if attrs.len() <= 3
             && attrs
                 .iter()
-                .all(|a| matches!(a.key.as_slice(), b"x" | b"y" | b"z"))
+                .all(|a| matches!(a.key.as_ref(), "x" | "y" | "z"))
             && child.schema.children.is_empty()
         {
             if attrs.iter().all(|a| parse_ok_all::<i32>(&a.values)) {

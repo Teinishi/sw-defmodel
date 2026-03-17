@@ -1,7 +1,8 @@
 use super::{
-    MAX_ENUM,
     primitive_type::PrimitiveType,
-    write_macros::{write_define_lists, write_define_tag, write_define_unique_children},
+    write_macros::{
+        WriteWithIndent, write_define_lists, write_define_tag, write_define_unique_children,
+    },
     write_rule::{ChildElementType, SchemaWriteRule},
 };
 use heck::{ToSnakeCase, ToUpperCamelCase};
@@ -9,7 +10,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     fs::{self, File},
-    io::{self, BufWriter, Write},
+    io::{self, BufWriter, Write as _},
     path::Path,
 };
 use sw_defmodel::domtree::{Document, Element, HasChildren};
@@ -57,12 +58,16 @@ impl SchemaElement {
             if let Some(attr) = self
                 .attributes
                 .iter_mut()
-                .find(|attr| &attr.key == slot.key())
+                .find(|attr| attr.key.as_bytes() == slot.key())
             {
                 attr.update(slot.value())
             } else {
-                self.attributes
-                    .push(SchemaAttribute::new(slot.key().to_owned(), slot.value()));
+                self.attributes.push(SchemaAttribute::new(
+                    std::str::from_utf8(slot.key())
+                        .expect("utf-8 error")
+                        .to_owned(),
+                    slot.value(),
+                ));
             }
         }
 
@@ -179,12 +184,12 @@ impl SchemaElement {
 
 #[derive(Debug)]
 pub(super) struct SchemaAttribute {
-    pub(super) key: Vec<u8>,
+    pub(super) key: String,
     pub(super) values: Vec<String>,
 }
 
 impl SchemaAttribute {
-    fn new(key: Vec<u8>, value: String) -> Self {
+    fn new(key: String, value: String) -> Self {
         Self {
             key,
             values: Vec::from([value]),
@@ -197,26 +202,13 @@ impl SchemaAttribute {
         }
     }
 
-    pub(super) fn into_key_type_string(self, indent: &str) -> (String, String) {
-        let key = String::from_utf8(self.key).expect("utf-8 error");
-        let type_name = key.to_upper_camel_case();
-        (
-            key.to_snake_case(),
-            ValueType::from_values(self.values).as_string(indent, &type_name),
-        )
+    pub(super) fn get_key(&self) -> String {
+        self.key.to_snake_case()
     }
-}
 
-#[derive(Debug)]
-pub(super) enum ValueType {
-    Primitive(PrimitiveType),
-    Enum(PrimitiveType, Vec<String>),
-}
-
-impl ValueType {
-    fn from_values(values: Vec<String>) -> Self {
-        let prim = PrimitiveType::from_values(&values);
-        if values.len() < MAX_ENUM
+    pub(super) fn get_value_type(self, max_enum: usize) -> ValueType {
+        let prim = PrimitiveType::from_values(&self.values);
+        if self.values.len() < max_enum
             && matches!(
                 prim,
                 PrimitiveType::U32
@@ -224,64 +216,65 @@ impl ValueType {
                     | PrimitiveType::I32
                     | PrimitiveType::String
             )
-            && values.iter().all(|v| !v.contains('/'))
+            && self.values.iter().all(|v| !v.contains('/'))
         // スラッシュを含むものはファイルパスとみなして enum 化対象外
         {
-            Self::Enum(prim, values)
+            ValueType::Enum(self.key.to_upper_camel_case(), prim, self.values)
         } else {
-            Self::Primitive(prim)
+            ValueType::Primitive(prim)
         }
     }
+}
 
-    fn as_string(&self, indent: &str, type_name: &str) -> String {
-        use std::fmt::Write;
+#[derive(Debug)]
+pub(super) enum ValueType {
+    Primitive(PrimitiveType),
+    Enum(String, PrimitiveType, Vec<String>),
+}
 
+impl WriteWithIndent for ValueType {
+    fn write<W: io::Write>(&self, f: &mut W, indent: &str) -> io::Result<()> {
         match self {
-            Self::Primitive(prim) => format!("{}", prim),
-            Self::Enum(val_type, variants) => {
-                let mut f = String::new();
-
+            Self::Primitive(prim) => write!(f, "{}", prim),
+            Self::Enum(name, val_type, variants) => {
                 if matches!(val_type, PrimitiveType::String) {
-                    writeln!(&mut f, "enum {} &str {{", type_name).unwrap();
+                    writeln!(f, "enum {} &str {{", name)?;
                 } else {
-                    writeln!(&mut f, "enum {} {} {{", type_name, val_type).unwrap();
+                    writeln!(f, "enum {} {} {{", name, val_type)?;
                 }
 
                 for value in variants {
                     match val_type {
                         PrimitiveType::U32 => {
                             let v = value.parse::<u32>().unwrap();
-                            writeln!(&mut f, "{}    _{} = {},", indent, v, v).unwrap();
+                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
                         }
                         PrimitiveType::U64 => {
                             let v = value.parse::<u64>().unwrap();
-                            writeln!(&mut f, "{}    _{} = {},", indent, v, v).unwrap();
+                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
                         }
                         PrimitiveType::I32 => {
                             let v = value.parse::<i32>().unwrap();
-                            writeln!(&mut f, "{}    _{} = {},", indent, v, v).unwrap();
+                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
                         }
                         PrimitiveType::String => {
                             if value.is_empty() {
-                                writeln!(&mut f, "{}    None = {:?},", indent, value).unwrap();
+                                writeln!(f, "{}    None = {:?},", indent, value)?;
                             } else {
                                 writeln!(
-                                    &mut f,
+                                    f,
                                     "{}    {} = {:?},",
                                     indent,
                                     value.to_upper_camel_case(),
                                     value
-                                )
-                                .unwrap();
+                                )?;
                             }
                         }
                         _ => unreachable!(),
                     }
                 }
 
-                write!(&mut f, "{}}}", indent).unwrap();
-
-                f
+                write!(f, "{}}}", indent)
             }
         }
     }

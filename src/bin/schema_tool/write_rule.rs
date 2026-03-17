@@ -1,4 +1,4 @@
-use super::schema_analyzer::{SchemaAttribute, SchemaChild};
+use super::schema_analyzer::{SchemaAttribute, SchemaChild, ValueType};
 use std::io;
 
 #[derive(Debug)]
@@ -11,12 +11,14 @@ pub(super) enum ChildElementType {
 }
 
 pub(super) trait SchemaWriteRule {
+    const MAX_ENUM: usize;
+
     #[expect(unused_variables)]
     fn before_define_attribute(
         &mut self,
         tag_name: &str,
         attribute: &SchemaAttribute,
-    ) -> Option<String> {
+    ) -> Option<ValueType> {
         None
     }
 
