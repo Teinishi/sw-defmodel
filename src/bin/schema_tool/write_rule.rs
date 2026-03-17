@@ -1,14 +1,8 @@
-use super::schema_analyzer::{SchemaAttribute, SchemaChild, ValueType};
+use super::{
+    enums::{ChildElementType, ValueType},
+    schema_analyzer::{SchemaAttribute, SchemaChild},
+};
 use std::io;
-
-#[derive(Debug)]
-pub(super) enum ChildElementType {
-    NamedUnique(&'static str),
-    #[expect(dead_code)]
-    Unique,
-    #[expect(dead_code)]
-    List,
-}
 
 pub(super) trait SchemaWriteRule {
     const MAX_ENUM: usize;

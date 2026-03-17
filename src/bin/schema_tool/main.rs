@@ -1,15 +1,15 @@
-mod primitive_type;
+mod enums;
 mod schema_analyzer;
 mod write_macros;
 mod write_rule;
 
-use primitive_type::parse_ok_all;
+use enums::{parse_ok_all, ChildElementType};
 use schema_analyzer::{SchemaChild, analyze_schema};
 use std::{
     io::{self, Write},
     path::Path,
 };
-use write_rule::{ChildElementType, SchemaWriteRule};
+use write_rule::SchemaWriteRule;
 
 fn main() -> io::Result<()> {
     // test_data/vanilla_definitions から <definition> のスキーマを生成

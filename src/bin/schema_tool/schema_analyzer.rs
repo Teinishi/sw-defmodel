@@ -1,9 +1,7 @@
 use super::{
-    primitive_type::PrimitiveType,
-    write_macros::{
-        WriteWithIndent, write_define_lists, write_define_tag, write_define_unique_children,
-    },
-    write_rule::{ChildElementType, SchemaWriteRule},
+    enums::{ChildElementType, PrimitiveType, ValueType},
+    write_macros::{write_define_lists, write_define_tag, write_define_unique_children},
+    write_rule::SchemaWriteRule,
 };
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use std::{
@@ -222,60 +220,6 @@ impl SchemaAttribute {
             ValueType::Enum(self.key.to_upper_camel_case(), prim, self.values)
         } else {
             ValueType::Primitive(prim)
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) enum ValueType {
-    Primitive(PrimitiveType),
-    Enum(String, PrimitiveType, Vec<String>),
-}
-
-impl WriteWithIndent for ValueType {
-    fn write<W: io::Write>(&self, f: &mut W, indent: &str) -> io::Result<()> {
-        match self {
-            Self::Primitive(prim) => write!(f, "{}", prim),
-            Self::Enum(name, val_type, variants) => {
-                if matches!(val_type, PrimitiveType::String) {
-                    writeln!(f, "enum {} &str {{", name)?;
-                } else {
-                    writeln!(f, "enum {} {} {{", name, val_type)?;
-                }
-
-                for value in variants {
-                    match val_type {
-                        PrimitiveType::U32 => {
-                            let v = value.parse::<u32>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
-                        }
-                        PrimitiveType::U64 => {
-                            let v = value.parse::<u64>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
-                        }
-                        PrimitiveType::I32 => {
-                            let v = value.parse::<i32>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
-                        }
-                        PrimitiveType::String => {
-                            if value.is_empty() {
-                                writeln!(f, "{}    None = {:?},", indent, value)?;
-                            } else {
-                                writeln!(
-                                    f,
-                                    "{}    {} = {:?},",
-                                    indent,
-                                    value.to_upper_camel_case(),
-                                    value
-                                )?;
-                            }
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-
-                write!(f, "{}}}", indent)
-            }
         }
     }
 }
