@@ -1,5 +1,4 @@
 use super::write_macros::WriteWithIndent;
-use heck::ToUpperCamelCase;
 use std::{fmt::Display, io, str::FromStr};
 
 pub(super) fn parse_ok_all<T: FromStr>(values: &[String]) -> bool {
@@ -50,51 +49,100 @@ impl Display for PrimitiveType {
 #[derive(Debug)]
 pub(super) enum ValueType {
     Primitive(PrimitiveType),
-    Enum(String, PrimitiveType, Vec<String>),
+    EnumU32 {
+        name: String,
+        variants: Vec<(String, u32)>,
+    },
+    EnumU64 {
+        name: String,
+        variants: Vec<(String, u64)>,
+    },
+    EnumI32 {
+        name: String,
+        variants: Vec<(String, i32)>,
+    },
+    EnumString {
+        name: String,
+        variants: Vec<(String, String)>,
+    },
+}
+
+impl ValueType {
+    #[allow(dead_code)]
+    pub(super) fn new_enum_u32(name: &str, variants: &[(&str, u32)]) -> Self {
+        Self::EnumU32 {
+            name: name.to_owned(),
+            variants: variants
+                .iter()
+                .map(|(vn, vv)| (vn.to_string(), *vv))
+                .collect(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn new_enum_u64(name: &str, variants: &[(&str, u64)]) -> Self {
+        Self::EnumU64 {
+            name: name.to_owned(),
+            variants: variants
+                .iter()
+                .map(|(vn, vv)| (vn.to_string(), *vv))
+                .collect(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn new_enum_i32(name: &str, variants: &[(&str, i32)]) -> Self {
+        Self::EnumI32 {
+            name: name.to_owned(),
+            variants: variants
+                .iter()
+                .map(|(vn, vv)| (vn.to_string(), *vv))
+                .collect(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn new_enum_str(name: &str, variants: &[(&str, &str)]) -> Self {
+        Self::EnumString {
+            name: name.to_owned(),
+            variants: variants
+                .iter()
+                .map(|(vn, vv)| (vn.to_string(), vv.to_string()))
+                .collect(),
+        }
+    }
 }
 
 impl WriteWithIndent for ValueType {
     fn write<W: io::Write>(&self, f: &mut W, indent: &str) -> io::Result<()> {
         match self {
             Self::Primitive(prim) => write!(f, "{}", prim),
-            Self::Enum(name, val_type, variants) => {
-                if matches!(val_type, PrimitiveType::String) {
-                    writeln!(f, "enum {} &str {{", name)?;
-                } else {
-                    writeln!(f, "enum {} {} {{", name, val_type)?;
+            Self::EnumU32 { name, variants } => {
+                writeln!(f, "enum {name} u32 {{")?;
+                for (vn, vv) in variants {
+                    writeln!(f, "{indent}    {vn} = {vv},")?;
                 }
-
-                for value in variants {
-                    match val_type {
-                        PrimitiveType::U32 => {
-                            let v = value.parse::<u32>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
-                        }
-                        PrimitiveType::U64 => {
-                            let v = value.parse::<u64>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
-                        }
-                        PrimitiveType::I32 => {
-                            let v = value.parse::<i32>().unwrap();
-                            writeln!(f, "{}    _{} = {},", indent, v, v)?;
-                        }
-                        PrimitiveType::String => {
-                            if value.is_empty() {
-                                writeln!(f, "{}    None = {:?},", indent, value)?;
-                            } else {
-                                writeln!(
-                                    f,
-                                    "{}    {} = {:?},",
-                                    indent,
-                                    value.to_upper_camel_case(),
-                                    value
-                                )?;
-                            }
-                        }
-                        _ => unreachable!(),
-                    }
+                write!(f, "{}}}", indent)
+            }
+            Self::EnumU64 { name, variants } => {
+                writeln!(f, "enum {name} u64 {{")?;
+                for (vn, vv) in variants {
+                    writeln!(f, "{indent}    {vn} = {vv},")?;
                 }
-
+                write!(f, "{}}}", indent)
+            }
+            Self::EnumI32 { name, variants } => {
+                writeln!(f, "enum {name} i32 {{")?;
+                for (vn, vv) in variants {
+                    writeln!(f, "{indent}    {vn} = {vv},")?;
+                }
+                write!(f, "{}}}", indent)
+            }
+            Self::EnumString { name, variants } => {
+                writeln!(f, "enum {name} &str {{")?;
+                for (vn, vv) in variants {
+                    writeln!(f, "{indent}    {vn} = {vv:?},")?;
+                }
                 write!(f, "{}}}", indent)
             }
         }

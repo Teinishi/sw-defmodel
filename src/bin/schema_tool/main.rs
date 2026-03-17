@@ -3,8 +3,8 @@ mod schema_analyzer;
 mod write_macros;
 mod write_rule;
 
-use enums::{parse_ok_all, ChildElementType};
-use schema_analyzer::{SchemaChild, analyze_schema};
+use enums::{ChildElementType, ValueType, parse_ok_all};
+use schema_analyzer::{SchemaAttribute, SchemaChild, analyze_schema};
 use std::{
     io::{self, Write},
     path::Path,
@@ -33,6 +33,40 @@ struct DefinitionTagRule {
 
 impl SchemaWriteRule for DefinitionTagRule {
     const MAX_ENUM: usize = 10; // 属性値の自動判定で enum にするしきい値
+
+    fn before_define_attribute(
+        &mut self,
+        tag_name: &str,
+        attribute: &SchemaAttribute,
+    ) -> Option<ValueType> {
+        if tag_name == "definition" {
+            match attribute.get_key().as_ref() {
+                "button_type" => {
+                    return Some(ValueType::new_enum_u32(
+                        "ButtonType",
+                        &[
+                            ("Push", 0),
+                            ("Toggle", 1),
+                            ("Key", 2),
+                            ("Lockable", 3),
+                            ("ThrottleLever", 4),
+                            ("SmallKeypad", 5),
+                            ("LargeKeypad", 6),
+                        ],
+                    ));
+                }
+                "light_type" => {
+                    return Some(ValueType::new_enum_u32(
+                        "LightType",
+                        &[("Normal", 0), ("Spotlight", 1)],
+                    ));
+                }
+                // TODO: 他
+                _ => {}
+            }
+        }
+        None
+    }
 
     fn before_scan_child(
         &mut self,

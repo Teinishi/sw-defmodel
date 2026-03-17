@@ -204,23 +204,52 @@ impl SchemaAttribute {
         self.key.to_snake_case()
     }
 
-    pub(super) fn get_value_type(self, max_enum: usize) -> ValueType {
+    pub(super) fn get_value_type(&self, max_enum: usize) -> ValueType {
         let prim = PrimitiveType::from_values(&self.values);
-        if self.values.len() < max_enum
-            && matches!(
-                prim,
-                PrimitiveType::U32
-                    | PrimitiveType::U64
-                    | PrimitiveType::I32
-                    | PrimitiveType::String
-            )
-            && self.values.iter().all(|v| !v.contains('/'))
-        // スラッシュを含むものはファイルパスとみなして enum 化対象外
-        {
-            ValueType::Enum(self.key.to_upper_camel_case(), prim, self.values)
-        } else {
-            ValueType::Primitive(prim)
+        if self.values.len() <= max_enum {
+            let name = self.key.to_upper_camel_case();
+            match prim {
+                PrimitiveType::U32 => {
+                    return ValueType::EnumU32 {
+                        name,
+                        variants: self
+                            .values
+                            .iter()
+                            .map(|v| (format!("_{v}"), v.parse().unwrap()))
+                            .collect(),
+                    };
+                }
+                PrimitiveType::U64 => {
+                    return ValueType::EnumU64 {
+                        name,
+                        variants: self
+                            .values
+                            .iter()
+                            .map(|v| (format!("_{v}"), v.parse().unwrap()))
+                            .collect(),
+                    };
+                }
+                PrimitiveType::I32 => {
+                    return ValueType::EnumI32 {
+                        name,
+                        variants: self
+                            .values
+                            .iter()
+                            .map(|v| (format!("_{v}"), v.parse().unwrap()))
+                            .collect(),
+                    };
+                }
+                PrimitiveType::String if self.values.iter().all(|v| !v.contains('/')) => {
+                    // スラッシュを含むものはファイルパスとみなして enum 化対象外
+                    return ValueType::EnumString {
+                        name,
+                        variants: self.values.iter().map(|v| (v.clone(), v.clone())).collect(),
+                    };
+                }
+                _ => {}
+            }
         }
+        ValueType::Primitive(prim)
     }
 }
 
