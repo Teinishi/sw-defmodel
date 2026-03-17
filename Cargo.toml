@@ -15,5 +15,5 @@ quick-xml = "0.39.2"
 
 [[bin]]
 name = "schema_tool"
-path = "src/bin/schema_tool.rs"
+path = "src/bin/schema_tool/main.rs"
 required-features = ["tool"]

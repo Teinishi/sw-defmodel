@@ -1,4 +1,8 @@
-// サンプルXMLを読んでスキーマ生成
+use super::{
+    MAX_ENUM,
+    write_macros::{write_define_lists, write_define_tag, write_define_unique_children},
+    write_rule::{ChildElementType, SchemaWriteRule},
+};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use std::{
     collections::HashMap,
@@ -9,140 +13,12 @@ use std::{
 };
 use sw_defmodel::domtree::{Document, Element, HasChildren};
 
-const MAX_ENUM: usize = 10;
-
-fn main() {
-    // test_data/vanilla_definitions から <definition> のスキーマを生成
-    generate_schema(
-        &[Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("test_data")
-            .join("vanilla_definitions")],
-        "definition",
-        &mut DefinitionTagRule::default(),
-    )
-    .unwrap();
-}
-
-// <definition> のスキーマの上書きルール
-#[derive(Default, Debug)]
-struct DefinitionTagRule {
-    vec3i: bool,
-    vec3f: bool,
-}
-
-impl SchemaWriteRule for DefinitionTagRule {
-    fn before_scan_child(
-        &mut self,
-        tag_name: &str,
-        child: &SchemaChild,
-    ) -> Option<ChildElementType> {
-        if tag_name == "definition" {
-            match child.get_name() {
-                "voxel_min"
-                | "voxel_max"
-                | "voxel_physics_min"
-                | "voxel_physics_max"
-                | "voxel_location_child"
-                | "light_position"
-                | "dynamic_body_position"
-                | "compartment_sample_pos"
-                | "seat_front"
-                | "seat_up"
-                | "light_forward"
-                | "door_normal"
-                | "door_side"
-                | "door_up"
-                | "door_base_pos"
-                | "connector_axis"
-                | "connector_up"
-                | "particle_direction"
-                | "seat_exit_position"
-                | "weapon_breech_position"
-                | "weapon_breech_normal" => {
-                    self.vec3i = true;
-                    Some(ChildElementType::NamedUnique("Vec3i"))
-                }
-                "bb_physics_min"
-                | "bb_physics_max"
-                | "constraint_pos_parent"
-                | "constraint_pos_child"
-                | "force_dir"
-                | "light_color"
-                | "door_size"
-                | "dynamic_rotation_axes"
-                | "dynamic_side_axis"
-                | "magnet_offset"
-                | "seat_offset"
-                | "seat_camera"
-                | "seat_render"
-                | "particle_offset"
-                | "particle_bounds"
-                | "rope_hook_offset"
-                | "weapon_cart_position"
-                | "weapon_cart_velocity" => {
-                    self.vec3f = true;
-                    Some(ChildElementType::NamedUnique("Vec3f"))
-                }
-                _ => None,
-            }
-        } else {
-            None
-        }
-    }
-
-    fn finalize<W: Write>(&mut self, f: &mut BufWriter<W>, tag_name: &str) -> io::Result<()> {
-        if self.vec3i {
-            writeln!(f, "")?;
-            writeln!(f, "define_tag!(Vec3i {{")?;
-            writeln!(f, "    \"x\": i32,")?;
-            writeln!(f, "    \"y\": i32,")?;
-            writeln!(f, "    \"z\": i32,")?;
-            writeln!(f, "}});")?;
-        }
-        if self.vec3f {
-            writeln!(f, "")?;
-            writeln!(f, "define_tag!(Vec3f {{")?;
-            writeln!(f, "    \"x\": f32,")?;
-            writeln!(f, "    \"y\": f32,")?;
-            writeln!(f, "    \"z\": f32,")?;
-            writeln!(f, "}});")?;
-        }
-
-        Ok(())
-    }
-}
-
-trait SchemaWriteRule {
-    #[expect(unused_variables)]
-    fn before_define_attribute(
-        &mut self,
-        tag_name: &str,
-        attribute: &SchemaAttribute,
-    ) -> Option<String> {
-        None
-    }
-
-    #[expect(unused_variables)]
-    fn before_scan_child(
-        &mut self,
-        tag_name: &str,
-        child: &SchemaChild,
-    ) -> Option<ChildElementType> {
-        None
-    }
-
-    #[expect(unused_variables)]
-    fn finalize<W: Write>(&mut self, f: &mut BufWriter<W>, tag_name: &str) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-fn generate_schema<P: AsRef<Path> + Debug, R: SchemaWriteRule>(
+pub(super) fn analyze_schema<P: AsRef<Path> + Debug, R: SchemaWriteRule>(
     dirs: &[P],
     tag_name: &str,
     rule: &mut R,
 ) -> io::Result<()> {
-    let mut schema = Schema::default();
+    let mut schema = SchemaElement::default();
 
     for dir in dirs {
         for entry in std::fs::read_dir(dir)? {
@@ -166,118 +42,15 @@ fn generate_schema<P: AsRef<Path> + Debug, R: SchemaWriteRule>(
     fs::create_dir_all(&output_dir)?;
 
     schema.write(output_dir, tag_name, rule)
-    // rule.finalize()
-}
-
-const RUST_KEYWORDS: [&str; 50] = [
-    "as", "async", "await", "break", "const", "continue", "crate", "else", "enum", "extern",
-    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
-    "ref", "return", "Self", "self", "static", "struct", "super", "trait", "true", "type",
-    "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final", "macro",
-    "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
-];
-
-// define_tag マクロで属性定義
-fn write_define_tag<W: Write, R: SchemaWriteRule>(
-    f: &mut BufWriter<W>,
-    tag_name: &str,
-    name: &str,
-    attributes: Vec<SchemaAttribute>,
-    rule: &mut R,
-) -> io::Result<()> {
-    writeln!(f, "define_tag!({name} {{")?;
-
-    for attr in attributes {
-        let override_typename = rule.before_define_attribute(tag_name, &attr);
-        let (mut key, val_type) = attr.into_key_type_string("    ");
-        if let Some(n) = override_typename {
-            key = n;
-        }
-
-        if RUST_KEYWORDS.contains(&key.as_str()) {
-            writeln!(f, "    {:?} => {}_attr: {},", key, key, val_type)?;
-        } else {
-            writeln!(f, "    {:?}: {},", key, val_type)?;
-        }
-    }
-
-    writeln!(f, "}});")
-}
-
-// define_unique_children マクロで親と子要素の紐づけ定義
-fn write_define_unique_children<W: Write>(
-    f: &mut BufWriter<W>,
-    name: &str,
-    children: &[(SchemaChild, Option<&'static str>)],
-) -> io::Result<()> {
-    writeln!(f, "define_unique_children!({} {{", name)?;
-
-    for (child, type_name) in children {
-        let child_name = child.get_name().to_snake_case();
-        if RUST_KEYWORDS.contains(&child_name.as_ref()) {
-            write!(f, "    <{}> => {}_el: ", &child_name, &child_name)?;
-        } else {
-            write!(f, "    <{}>: ", &child_name)?;
-        }
-
-        if let Some(t) = type_name {
-            writeln!(f, "{},", t)?;
-        } else {
-            let t = child.get_name().to_upper_camel_case();
-            writeln!(f, "{},", t)?;
-        }
-    }
-
-    writeln!(f, "}});")
-}
-
-// define_lists マクロでリストの定義
-fn write_define_lists<W: Write>(
-    f: &mut BufWriter<W>,
-    name: &str,
-    children: &[SchemaChild],
-) -> io::Result<()> {
-    writeln!(f, "define_lists!({} {{", name)?;
-
-    for child in children {
-        let list_name = child.get_name().to_snake_case();
-        let item_name_r = child.schema.children[0].get_name();
-        let item_name = item_name_r.to_snake_case();
-        let item_struct_name = item_name_r.to_upper_camel_case();
-        if RUST_KEYWORDS.contains(&list_name.as_ref()) {
-            writeln!(
-                f,
-                "    <{}> => {}_el: [<{}>: {}],",
-                &list_name, &list_name, &item_name, &item_struct_name
-            )?;
-        } else {
-            writeln!(
-                f,
-                "    <{}>: [<{}>: {}],",
-                &list_name, &item_name, &item_struct_name
-            )?;
-        }
-    }
-
-    writeln!(f, "}});")
-}
-
-#[derive(Debug)]
-enum ChildElementType {
-    NamedUnique(&'static str),
-    #[expect(dead_code)]
-    Unique,
-    #[expect(dead_code)]
-    List,
 }
 
 #[derive(Default, Debug)]
-struct Schema {
-    attributes: Vec<SchemaAttribute>,
-    children: Vec<SchemaChild>,
+pub(super) struct SchemaElement {
+    pub(super) attributes: Vec<SchemaAttribute>,
+    pub(super) children: Vec<SchemaChild>,
 }
 
-impl Schema {
+impl SchemaElement {
     fn update(&mut self, element: &Element) {
         for slot in &element.attributes.slots {
             if let Some(attr) = self
@@ -404,7 +177,7 @@ impl Schema {
 }
 
 #[derive(Debug)]
-struct SchemaAttribute {
+pub(super) struct SchemaAttribute {
     key: Vec<u8>,
     values: Vec<String>,
 }
@@ -423,7 +196,7 @@ impl SchemaAttribute {
         }
     }
 
-    fn into_key_type_string(self, indent: &str) -> (String, String) {
+    pub(super) fn into_key_type_string(self, indent: &str) -> (String, String) {
         let key = String::from_utf8(self.key).expect("utf-8 error");
         let type_name = key.to_upper_camel_case();
         (
@@ -434,7 +207,7 @@ impl SchemaAttribute {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
-enum PrimitiveType {
+pub(super) enum PrimitiveType {
     Bool,
     U32,
     U64,
@@ -475,7 +248,7 @@ impl Display for PrimitiveType {
 }
 
 #[derive(Debug)]
-enum ValueType {
+pub(super) enum ValueType {
     Primitive(PrimitiveType),
     Enum(PrimitiveType, Vec<String>),
 }
@@ -555,11 +328,11 @@ impl ValueType {
 }
 
 #[derive(Debug)]
-struct SchemaChild {
-    name: Vec<u8>,
-    min_count: usize,
-    max_count: usize,
-    schema: Schema,
+pub(super) struct SchemaChild {
+    pub(super) name: Vec<u8>,
+    pub(super) min_count: usize,
+    pub(super) max_count: usize,
+    pub(super) schema: SchemaElement,
 }
 
 impl SchemaChild {
@@ -568,11 +341,11 @@ impl SchemaChild {
             name,
             min_count: usize::MAX,
             max_count: 0,
-            schema: Schema::default(),
+            schema: SchemaElement::default(),
         }
     }
 
-    fn get_name(&self) -> &str {
+    pub(super) fn get_name(&self) -> &str {
         std::str::from_utf8(&self.name).expect("utf-8 error")
     }
 }
