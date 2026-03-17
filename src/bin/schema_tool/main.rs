@@ -1,7 +1,9 @@
+mod primitive_type;
 mod schema_analyzer;
 mod write_macros;
 mod write_rule;
 
+use primitive_type::parse_ok_all;
 use schema_analyzer::{SchemaChild, analyze_schema};
 use std::{
     io::{self, Write},
@@ -37,58 +39,23 @@ impl SchemaWriteRule for DefinitionTagRule {
         tag_name: &str,
         child: &SchemaChild,
     ) -> Option<ChildElementType> {
-        if tag_name == "definition" {
-            match child.get_name() {
-                "voxel_min"
-                | "voxel_max"
-                | "voxel_physics_min"
-                | "voxel_physics_max"
-                | "voxel_location_child"
-                | "light_position"
-                | "dynamic_body_position"
-                | "compartment_sample_pos"
-                | "seat_front"
-                | "seat_up"
-                | "light_forward"
-                | "door_normal"
-                | "door_side"
-                | "door_up"
-                | "door_base_pos"
-                | "connector_axis"
-                | "connector_up"
-                | "particle_direction"
-                | "seat_exit_position"
-                | "weapon_breech_position"
-                | "weapon_breech_normal" => {
-                    self.vec3i = true;
-                    Some(ChildElementType::NamedUnique("Vec3i"))
-                }
-                "bb_physics_min"
-                | "bb_physics_max"
-                | "constraint_pos_parent"
-                | "constraint_pos_child"
-                | "force_dir"
-                | "light_color"
-                | "door_size"
-                | "dynamic_rotation_axes"
-                | "dynamic_side_axis"
-                | "magnet_offset"
-                | "seat_offset"
-                | "seat_camera"
-                | "seat_render"
-                | "particle_offset"
-                | "particle_bounds"
-                | "rope_hook_offset"
-                | "weapon_cart_position"
-                | "weapon_cart_velocity" => {
-                    self.vec3f = true;
-                    Some(ChildElementType::NamedUnique("Vec3f"))
-                }
-                _ => None,
+        // x, y, z 属性だけを持ち、整数または浮動小数点数の値は入っているものは Vec3i, Vec3f で定義
+        let attrs = &child.schema.attributes;
+        if attrs.len() <= 3
+            && attrs
+                .iter()
+                .all(|a| matches!(a.key.as_slice(), b"x" | b"y" | b"z"))
+            && child.schema.children.is_empty()
+        {
+            if attrs.iter().all(|a| parse_ok_all::<i32>(&a.values)) {
+                self.vec3i = true;
+                return Some(ChildElementType::NamedUnique("Vec3i"));
+            } else if attrs.iter().all(|a| parse_ok_all::<f32>(&a.values)) {
+                self.vec3f = true;
+                return Some(ChildElementType::NamedUnique("Vec3f"));
             }
-        } else {
-            None
         }
+        None
     }
 
     fn finalize<W: Write>(&mut self, f: &mut io::BufWriter<W>, tag_name: &str) -> io::Result<()> {

@@ -1,12 +1,13 @@
 use super::{
     MAX_ENUM,
+    primitive_type::PrimitiveType,
     write_macros::{write_define_lists, write_define_tag, write_define_unique_children},
     write_rule::{ChildElementType, SchemaWriteRule},
 };
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use std::{
     collections::HashMap,
-    fmt::{Debug, Display},
+    fmt::Debug,
     fs::{self, File},
     io::{self, BufWriter, Write},
     path::Path,
@@ -178,8 +179,8 @@ impl SchemaElement {
 
 #[derive(Debug)]
 pub(super) struct SchemaAttribute {
-    key: Vec<u8>,
-    values: Vec<String>,
+    pub(super) key: Vec<u8>,
+    pub(super) values: Vec<String>,
 }
 
 impl SchemaAttribute {
@@ -203,47 +204,6 @@ impl SchemaAttribute {
             key.to_snake_case(),
             ValueType::from_values(self.values).as_string(indent, &type_name),
         )
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
-pub(super) enum PrimitiveType {
-    Bool,
-    U32,
-    U64,
-    I32,
-    F32,
-    String,
-}
-
-impl PrimitiveType {
-    fn from_values(values: &[String]) -> Self {
-        if values.iter().all(|v| v.parse::<bool>().is_ok()) {
-            Self::Bool
-        } else if values.iter().all(|v| v.parse::<u32>().is_ok()) {
-            Self::U32
-        } else if values.iter().all(|v| v.parse::<u64>().is_ok()) {
-            Self::U64
-        } else if values.iter().all(|v| v.parse::<i32>().is_ok()) {
-            Self::I32
-        } else if values.iter().all(|v| v.parse::<f32>().is_ok()) {
-            Self::F32
-        } else {
-            Self::String
-        }
-    }
-}
-
-impl Display for PrimitiveType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Bool => write!(f, "bool"),
-            Self::U32 => write!(f, "u32"),
-            Self::U64 => write!(f, "u64"),
-            Self::I32 => write!(f, "i32"),
-            Self::F32 => write!(f, "f32"),
-            Self::String => write!(f, "String"),
-        }
     }
 }
 
