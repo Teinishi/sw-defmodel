@@ -44,14 +44,14 @@ macro_rules! get_fourth_stringify {
 macro_rules! xml_enum {
     ($(#[$meta:meta])* enum $name:ident &str {
         $($variant:ident = $val:expr),* $(,)?
-    } at $path:literal) => {
+    }) => {
         xml_enum!(
             @define
             $(#[$meta])*
             #[doc = concat!(
-                xml_enum!(@doc { $($variant = $val),* } at $path ; $name),
+                xml_enum!(@doc $name { $($variant = $val),* }),
                 "```\n",
-                "use ", $path, "::", stringify!($name), ";\n",
+                "use ", module_path!(), "::", stringify!($name), ";\n",
                 "\n",
                 "// Parse from string\n",
                 "let value = ", get_first_stringify!($($val),*), ".parse::<", stringify!($name), ">();\n",
@@ -78,14 +78,14 @@ macro_rules! xml_enum {
 
     ($(#[$meta:meta])* enum $name:ident $val_type:ty {
         $($variant:ident = $val:expr),* $(,)?
-    } at $path:literal) => {
+    }) => {
         xml_enum!(
             @define
             $(#[$meta])*
             #[doc = concat!(
-                xml_enum!(@doc { $($variant = $val),* } at $path ; $name),
+                xml_enum!(@doc $name { $($variant = $val),* }),
                 "```\n",
-                "use ", $path, "::", stringify!($name), ";\n",
+                "use ", module_path!(), "::", stringify!($name), ";\n",
                 "\n",
                 "// Parse from string\n",
                 "let value = \"", get_first_stringify!($($val),*), "\".parse::<", stringify!($name), ">();\n",
@@ -135,7 +135,7 @@ macro_rules! xml_enum {
         }
     };
 
-    (@doc { $($variant:ident = $val:expr),* $(,)? } at $path:literal ; $name:ident) => {
+    (@doc $name:ident { $($variant:ident = $val:expr),* $(,)? }) => {
         concat!(
             "| Value | Variant |\n",
             "|-------|--------|\n",
@@ -195,38 +195,43 @@ macro_rules! define_tag {
     };
 
     (@loop [$($acc:literal,)*] $name:ident {
-        $attr_name:literal => $attr_ident:ident : $(#[$meta:meta])* enum $enum_name:ident &str {
+        $(#[$attr_meta:meta])*
+        $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident &str {
             $($variant:ident = $val:expr),* $(,)?
-        } at $path:literal
+        }
         $(, $($rest:tt)*)?
     }) => {
         // attr_type が enum (&str) の場合
         xml_enum! {
-            $(#[$meta])* enum $enum_name &str {
+            $(#[$enum_meta])* enum $enum_name &str {
                 $($variant = $val),*
-            } at $path
+            }
         }
         // 基本形に委譲
-        define_tag!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
+        define_tag!(@loop [$($acc,)*] $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
     };
 
     (@loop [$($acc:literal,)*] $name:ident {
-        $attr_name:literal => $attr_ident:ident : $(#[$meta:meta])* enum $enum_name:ident $val_type:ty {
+        $(#[$attr_meta:meta])*
+        $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident $val_type:ty {
             $($variant:ident = $val:expr),* $(,)?
-        } at $path:literal
+        }
         $(, $($rest:tt)*)?
     }) => {
         // attr_type が enum の場合
         xml_enum! {
-            $(#[$meta])* enum $enum_name $val_type {
+            $(#[$enum_meta])* enum $enum_name $val_type {
                 $($variant = $val),*
-            } at $path
+            }
         }
         // 基本形に委譲
-        define_tag!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
+        define_tag!(@loop [$($acc,)*] $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
     };
 
-    (@loop [$($acc:literal,)*] $name:ident { $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)? }) => {
+    (@loop [$($acc:literal,)*] $name:ident {
+        $(#[$attr_meta:meta])*
+        $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)?
+    }) => {
         // 基本形 "attr_name" => attr_ident: attr_type
         define_tag!(@impl $name { $attr_name => $attr_ident : $attr_type });
 
@@ -234,11 +239,11 @@ macro_rules! define_tag {
         define_tag!(@loop [$($acc,)* $attr_name,] $name { $($($rest)*)? });
     };
 
-    (@loop [$($acc:literal,)*] $name:ident { $attr_name:literal : $($rest:tt)* }) => {
+    (@loop [$($acc:literal,)*] $name:ident { $(#[$attr_meta:meta])* $attr_name:literal : $($rest:tt)* }) => {
         // 省略形 "attr_name": attr_type
         ::paste::paste! {
             // 基本形に委譲
-            define_tag!(@loop [$($acc,)*] $name { $attr_name => [<$attr_name>] : $($rest)* });
+            define_tag!(@loop [$($acc,)*] $name { $(#[$attr_meta])* $attr_name => [<$attr_name>] : $($rest)* });
         }
     };
 

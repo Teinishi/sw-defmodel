@@ -31,13 +31,19 @@ pub(super) fn write_define_tag<W: Write, R: SchemaWriteRule>(
         let override_type = rule.before_define_attribute(tag_name, &attr);
         let key = attr.get_key();
 
+        if let Some(doc) = override_type.doc {
+            writeln!(f, "    #[doc = {:?}]", doc)?;
+        }
+
         if RUST_KEYWORDS.contains(&key.as_str()) {
             write!(f, "    {:?} => {}_attr: ", key, key)?;
         } else {
             write!(f, "    {:?}: ", key)?;
         }
 
-        let value_type = override_type.unwrap_or_else(|| attr.get_value_type(R::MAX_ENUM));
+        let value_type = override_type
+            .val_type
+            .unwrap_or_else(|| attr.get_value_type(R::MAX_ENUM));
         value_type.write(f, "    ")?;
         writeln!(f, ",")?;
     }

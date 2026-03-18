@@ -12,16 +12,19 @@ define_tag!(Definition {
         LinearModule = "linear_module",
         LinearCompactModule = "linear_compact_module",
         None = "",
-    } at "sw_defmodel::component_definition",
-    "button_type": #[doc = "Represents the [button_type][Definition::button_type] XML attribute in [definition][Definition].\n\nA subtype for buttons where [type][Definition::type_attr()] is 8. The value is stored as an integer in XML."] enum ButtonType u32 {
-        Push = 0,
-        Toggle = 1,
-        Key = 2,
-        Lockable = 3,
-        ThrottleLever = 4,
-        SmallKeypad = 5,
-        LargeKeypad = 6,
-    } at "sw_defmodel::component_definition",
+    },
+    #[doc = "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8."]
+    "button_type":
+        #[doc = "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8."]
+        enum ButtonType u32 {
+            Push = 0,
+            Toggle = 1,
+            Key = 2,
+            Lockable = 3,
+            ThrottleLever = 4,
+            SmallKeypad = 5,
+            LargeKeypad = 6,
+        },
 });
 
 define_unique_children!(Definition {

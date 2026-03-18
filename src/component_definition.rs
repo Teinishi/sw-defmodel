@@ -1,5 +1,5 @@
-mod definition;
-mod surfaces;
+pub mod definition;
+pub mod surfaces;
 
 use crate::domtree::{Document, Element, HasChildren, HasChildrenMut};
 pub use definition::*;

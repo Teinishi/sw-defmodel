@@ -5,13 +5,13 @@ mod enums;
 mod schema_analyzer;
 mod write_rule;
 
-use enums::{ChildElementType, ValueType, parse_ok_all};
+use enums::{ChildElementType, parse_ok_all};
 use schema_analyzer::{SchemaAttribute, SchemaChild, analyze_schema};
 use std::{
     io::{self, Write},
     path::Path,
 };
-use write_rule::SchemaWriteRule;
+use write_rule::{OverrideAttribute, SchemaWriteRule};
 
 fn main() -> io::Result<()> {
     // test_data/vanilla_definitions から <definition> のスキーマを生成
@@ -40,11 +40,12 @@ impl SchemaWriteRule for DefinitionTagRule {
         &mut self,
         tag_name: &str,
         attribute: &SchemaAttribute,
-    ) -> Option<ValueType> {
+    ) -> OverrideAttribute {
         if tag_name == "definition" {
             match attribute.get_key().as_ref() {
                 "button_type" => {
-                    return Some(ValueType::new_enum_u32(
+                    return OverrideAttribute::enum_u32(
+                        "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8.",
                         "ButtonType",
                         &[
                             ("Push", 0),
@@ -55,23 +56,20 @@ impl SchemaWriteRule for DefinitionTagRule {
                             ("SmallKeypad", 5),
                             ("LargeKeypad", 6),
                         ],
-                        Some(
-                            "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8.",
-                        ),
-                    ));
+                    );
                 }
                 "light_type" => {
-                    return Some(ValueType::new_enum_u32(
+                    return OverrideAttribute::enum_u32(
+                        "", // TODO
                         "LightType",
                         &[("Normal", 0), ("Spotlight", 1)],
-                        None,
-                    ));
+                    );
                 }
                 // TODO: 他
                 _ => {}
             }
         }
-        None
+        Default::default()
     }
 
     fn before_scan_child(

@@ -75,72 +75,6 @@ pub(super) enum ValueType {
     },
 }
 
-impl ValueType {
-    #[allow(dead_code)]
-    pub(super) fn new_enum_u32(
-        name: &str,
-        variants: &[(&str, u32)],
-        doc: Option<&'static str>,
-    ) -> Self {
-        Self::EnumU32 {
-            name: name.to_owned(),
-            variants: variants
-                .iter()
-                .map(|(vn, vv)| (vn.to_string(), *vv))
-                .collect(),
-            doc,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn new_enum_u64(
-        name: &str,
-        variants: &[(&str, u64)],
-        doc: Option<&'static str>,
-    ) -> Self {
-        Self::EnumU64 {
-            name: name.to_owned(),
-            variants: variants
-                .iter()
-                .map(|(vn, vv)| (vn.to_string(), *vv))
-                .collect(),
-            doc,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn new_enum_i32(
-        name: &str,
-        variants: &[(&str, i32)],
-        doc: Option<&'static str>,
-    ) -> Self {
-        Self::EnumI32 {
-            name: name.to_owned(),
-            variants: variants
-                .iter()
-                .map(|(vn, vv)| (vn.to_string(), *vv))
-                .collect(),
-            doc,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn new_enum_str(
-        name: &str,
-        variants: &[(&str, &str)],
-        doc: Option<&'static str>,
-    ) -> Self {
-        Self::EnumString {
-            name: name.to_owned(),
-            variants: variants
-                .iter()
-                .map(|(vn, vv)| (vn.to_string(), vv.to_string()))
-                .collect(),
-            doc,
-        }
-    }
-}
-
 impl WriteWithIndent for ValueType {
     fn write<W: io::Write>(&self, f: &mut W, indent: &str) -> io::Result<()> {
         match self {
@@ -149,44 +83,47 @@ impl WriteWithIndent for ValueType {
                 name,
                 variants,
                 doc,
-            } => write_enum_with_idnent(f, name, "u32", doc, variants, indent),
+            } => write_enum_with_idnent(f, doc, name, "u32", variants, indent),
             Self::EnumU64 {
                 name,
                 variants,
                 doc,
-            } => write_enum_with_idnent(f, name, "u64", doc, variants, indent),
+            } => write_enum_with_idnent(f, doc, name, "u64", variants, indent),
             Self::EnumI32 {
                 name,
                 variants,
                 doc,
-            } => write_enum_with_idnent(f, name, "i32", doc, variants, indent),
+            } => write_enum_with_idnent(f, doc, name, "i32", variants, indent),
             Self::EnumString {
                 name,
                 variants,
                 doc,
-            } => write_enum_with_idnent(f, name, "&str", doc, variants, indent),
+            } => write_enum_with_idnent(f, doc, name, "&str", variants, indent),
         }
     }
 }
 
 fn write_enum_with_idnent<W: io::Write, K: Display, T: Debug>(
     f: &mut W,
+    doc: &Option<&str>,
     name: &str,
     val_type: &str,
-    doc: &Option<&str>,
     variants: &[(K, T)],
     indent: &str,
 ) -> io::Result<()> {
-    if let Some(doc) = doc {
-        write!(f, "#[doc = {:?}] ", doc)?;
-    }
-    write!(f, "enum {name} {val_type} ")?;
-    writeln!(f, "{{")?;
+    let indent1 = if let Some(doc) = doc {
+        writeln!(f, "\n{indent}    #[doc = {doc:?}] ")?;
+        writeln!(f, "{indent}    enum {name} {val_type} {{")?;
+        "    "
+    } else {
+        writeln!(f, "enum {name} {val_type} {{")?;
+        ""
+    };
 
     for (vn, vv) in variants {
-        writeln!(f, "{indent}    {vn} = {vv:?},")?;
+        writeln!(f, "{indent}{indent1}    {vn} = {vv:?},")?;
     }
-    write!(f, "{indent}}}")
+    write!(f, "{indent}{indent1}}}")
 }
 
 #[derive(Debug)]

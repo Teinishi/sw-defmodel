@@ -1,5 +1,5 @@
 use super::{
-    enums::{ChildElementType, ValueType},
+    enums::{ChildElementType, PrimitiveType, ValueType},
     schema_analyzer::{SchemaAttribute, SchemaChild},
 };
 use std::io;
@@ -12,8 +12,8 @@ pub(super) trait SchemaWriteRule {
         &mut self,
         tag_name: &str,
         attribute: &SchemaAttribute,
-    ) -> Option<ValueType> {
-        None
+    ) -> OverrideAttribute {
+        Default::default()
     }
 
     #[expect(unused_variables)]
@@ -32,5 +32,81 @@ pub(super) trait SchemaWriteRule {
         tag_name: &str,
     ) -> io::Result<()> {
         Ok(())
+    }
+}
+
+#[derive(Default, Debug)]
+pub(super) struct OverrideAttribute {
+    pub(super) doc: Option<&'static str>,
+    pub(super) val_type: Option<ValueType>,
+}
+
+impl OverrideAttribute {
+    #[allow(dead_code)]
+    pub(super) fn primitive(doc: &'static str, prim: PrimitiveType) -> Self {
+        Self {
+            doc: Some(doc),
+            val_type: Some(ValueType::Primitive(prim)),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn enum_u32(doc: &'static str, name: &str, variants: &[(&str, u32)]) -> Self {
+        Self {
+            doc: Some(doc),
+            val_type: Some(ValueType::EnumU32 {
+                name: name.to_owned(),
+                variants: variants
+                    .iter()
+                    .map(|(vn, vv)| (vn.to_string(), *vv))
+                    .collect(),
+                doc: Some(doc),
+            }),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn enum_u64(doc: &'static str, name: &str, variants: &[(&str, u64)]) -> Self {
+        Self {
+            doc: Some(doc),
+            val_type: Some(ValueType::EnumU64 {
+                name: name.to_owned(),
+                variants: variants
+                    .iter()
+                    .map(|(vn, vv)| (vn.to_string(), *vv))
+                    .collect(),
+                doc: Some(doc),
+            }),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn enum_i32(doc: &'static str, name: &str, variants: &[(&str, i32)]) -> Self {
+        Self {
+            doc: Some(doc),
+            val_type: Some(ValueType::EnumI32 {
+                name: name.to_owned(),
+                variants: variants
+                    .iter()
+                    .map(|(vn, vv)| (vn.to_string(), *vv))
+                    .collect(),
+                doc: Some(doc),
+            }),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn enum_str(doc: &'static str, name: &str, variants: &[(&str, &str)]) -> Self {
+        Self {
+            doc: Some(doc),
+            val_type: Some(ValueType::EnumString {
+                name: name.to_owned(),
+                variants: variants
+                    .iter()
+                    .map(|(vn, vv)| (vn.to_string(), vv.to_string()))
+                    .collect(),
+                doc: Some(doc),
+            }),
+        }
     }
 }
