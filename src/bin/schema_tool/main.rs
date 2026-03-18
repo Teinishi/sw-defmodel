@@ -1,6 +1,8 @@
+#[macro_use]
+mod write_macros;
+
 mod enums;
 mod schema_analyzer;
-mod write_macros;
 mod write_rule;
 
 use enums::{ChildElementType, ValueType, parse_ok_all};
@@ -95,20 +97,24 @@ impl SchemaWriteRule for DefinitionTagRule {
     fn finalize<W: Write>(&mut self, f: &mut io::BufWriter<W>, tag_name: &str) -> io::Result<()> {
         if tag_name == "definition" {
             if self.vec3i {
-                writeln!(f, "")?;
-                writeln!(f, "define_tag!(Vec3i {{")?;
-                writeln!(f, "    \"x\": i32,")?;
-                writeln!(f, "    \"y\": i32,")?;
-                writeln!(f, "    \"z\": i32,")?;
-                writeln!(f, "}});")?;
+                write_code!(
+                    f,
+                    define_tag!(Vec3i {
+                        "x": i32,
+                        "y": i32,
+                        "z": i32,
+                    });
+                )?;
             }
             if self.vec3f {
-                writeln!(f, "")?;
-                writeln!(f, "define_tag!(Vec3f {{")?;
-                writeln!(f, "    \"x\": f32,")?;
-                writeln!(f, "    \"y\": f32,")?;
-                writeln!(f, "    \"z\": f32,")?;
-                writeln!(f, "}});")?;
+                write_code!(
+                    f,
+                    define_tag!(Vec3f {
+                        "x": f32,
+                        "y": f32,
+                        "z": f32,
+                    });
+                )?;
             }
         }
 

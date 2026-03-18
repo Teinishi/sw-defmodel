@@ -102,3 +102,9 @@ pub(super) fn write_define_lists<W: Write>(
 
     writeln!(f, "}});")
 }
+
+macro_rules! write_code {
+    ($f:expr, $($t:tt)*) => {
+        write!($f, "{}", stringify!($($t)*))
+    };
+}
