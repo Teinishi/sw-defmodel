@@ -45,11 +45,14 @@ macro_rules! xml_enum {
     ($(#[$meta:meta])* enum $name:ident &str {
         $($variant:ident = $val:expr),* $(,)?
     }) => {
+        // 文字列型の場合
         xml_enum!(
             @define
             $(#[$meta])*
             #[doc = concat!(
-                xml_enum!(@doc $name { $($variant = $val),* }),
+                "| Value | Variant |\n",
+                "|:------|:-------|\n",
+                xml_enum!(@doc2 $name { $($variant = $val),* }),
                 "```\n",
                 "use ", module_path!(), "::", stringify!($name), ";\n",
                 "\n",
@@ -79,11 +82,16 @@ macro_rules! xml_enum {
     ($(#[$meta:meta])* enum $name:ident $val_type:ty {
         $($variant:ident = $val:expr),* $(,)?
     }) => {
+        // 文字列型以外の場合 (今のところ整数のみ想定)
         xml_enum!(
             @define
             $(#[$meta])*
             #[doc = concat!(
-                xml_enum!(@doc $name { $($variant = $val),* }),
+                "In the XML format, this value is stored as an integer.\n",
+                "\n",
+                "| `", stringify!($val_type), "` Value | Variant |\n",
+                "|------:|:-------|\n",
+                xml_enum!(@doc2 $name { $($variant = $val),* }),
                 "```\n",
                 "use ", module_path!(), "::", stringify!($name), ";\n",
                 "\n",
@@ -106,6 +114,7 @@ macro_rules! xml_enum {
         );
 
         impl $name {
+            /// Returns the integer representation used in XML.
             pub fn as_value(&self) -> ::core::option::Option<$val_type> {
                 match self {
                     $(Self::$variant => ::core::option::Option::Some($val)),*,
@@ -135,11 +144,9 @@ macro_rules! xml_enum {
         }
     };
 
-    (@doc $name:ident { $($variant:ident = $val:expr),* $(,)? }) => {
+    (@doc2 $name:ident { $($variant:ident = $val:expr),* $(,)? }) => {
         concat!(
-            "| Value | Variant |\n",
-            "|-------|--------|\n",
-            $("| ", stringify!($val), " | `", stringify!($variant), "` |\n", )*
+            $("| `", stringify!($val), "` | `", stringify!($variant), "` |\n", )*
             "\n",
             "Any other value is stored in [`", stringify!($name), "::Unknown`].\n",
             "\n",
@@ -194,13 +201,16 @@ macro_rules! define_tag {
         define_tag!(@loop [] $name { $($body)* });
     };
 
-    (@loop [$($acc:literal,)*] $name:ident {
-        $(#[$attr_meta:meta])*
-        $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident &str {
-            $($variant:ident = $val:expr),* $(,)?
+    (
+        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        $name:ident {
+            $(#[$attr_meta:meta])*
+            $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident &str {
+                $($variant:ident = $val:expr),* $(,)?
+            }
+            $(, $($rest:tt)*)?
         }
-        $(, $($rest:tt)*)?
-    }) => {
+    ) => {
         // attr_type が enum (&str) の場合
         xml_enum! {
             $(#[$enum_meta])* enum $enum_name &str {
@@ -208,16 +218,22 @@ macro_rules! define_tag {
             }
         }
         // 基本形に委譲
-        define_tag!(@loop [$($acc,)*] $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
+        define_tag!(
+            @loop [$([$(#[$acc_meta])* $acc_name => $acc_ident : $acc_type]),*]
+            $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? }
+        );
     };
 
-    (@loop [$($acc:literal,)*] $name:ident {
-        $(#[$attr_meta:meta])*
-        $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident $val_type:ty {
-            $($variant:ident = $val:expr),* $(,)?
+    (
+        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        $name:ident {
+            $(#[$attr_meta:meta])*
+            $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident $val_type:ty {
+                $($variant:ident = $val:expr),* $(,)?
+            }
+            $(, $($rest:tt)*)?
         }
-        $(, $($rest:tt)*)?
-    }) => {
+    ) => {
         // attr_type が enum の場合
         xml_enum! {
             $(#[$enum_meta])* enum $enum_name $val_type {
@@ -225,47 +241,70 @@ macro_rules! define_tag {
             }
         }
         // 基本形に委譲
-        define_tag!(@loop [$($acc,)*] $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
+        define_tag!(
+            @loop [$([$(#[$acc_meta])* $acc_name => $acc_ident : $acc_type]),*]
+            $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? }
+        );
     };
 
-    (@loop [$($acc:literal,)*] $name:ident {
-        $(#[$attr_meta:meta])*
-        $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)?
-    }) => {
+    (
+        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        $name:ident { $(#[$attr_meta:meta])* $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)? }
+    ) => {
         // 基本形 "attr_name" => attr_ident: attr_type
-        define_tag!(@impl $name { $attr_name => $attr_ident : $attr_type });
-
         // 残りがあれば再帰的に処理
-        define_tag!(@loop [$($acc,)* $attr_name,] $name { $($($rest)*)? });
+        define_tag!(
+            @loop [
+                $([$(#[$acc_meta])* $acc_name => $acc_ident : $acc_type], )*
+                [$(#[$attr_meta])* $attr_name => $attr_ident : $attr_type]
+            ]
+            $name { $($($rest)*)? }
+        );
     };
 
-    (@loop [$($acc:literal,)*] $name:ident { $(#[$attr_meta:meta])* $attr_name:literal : $($rest:tt)* }) => {
+    (
+        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        $name:ident { $(#[$attr_meta:meta])* $attr_name:literal : $($rest:tt)* }
+    ) => {
         // 省略形 "attr_name": attr_type
         ::paste::paste! {
             // 基本形に委譲
-            define_tag!(@loop [$($acc,)*] $name { $(#[$attr_meta])* $attr_name => [<$attr_name>] : $($rest)* });
+            define_tag!(
+                @loop [$([$(#[$acc_meta])* $acc_name => $acc_ident : $acc_type]),*]
+                $name { $(#[$attr_meta])* $attr_name => [<$attr_name>] : $($rest)* }
+            );
         }
     };
 
     // 終了条件
-    (@loop [$($acc:literal,)*] $name:ident {}) => {
+    (
+        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        $name:ident {}
+    ) => {
         impl<E> $name<E> {
-            pub const ATTRIBUTES: [&'static str; [$($acc,)*].len()] = [$($acc,)*];
+            /// List of all known attributes.
+            pub const ATTRIBUTES: [&'static str; [$($acc_name,)*].len()] = [$($acc_name,)*];
         }
-    };
 
-    (@impl $name:ident { $attr_name:literal => $attr_ident:ident : $attr_type:ty }) => {
         impl<E: $crate::domtree::HasAttr> $name<E> {
-            pub fn $attr_ident(&self) -> ::core::result::Result<$attr_type, $crate::domtree::error::AttrError> {
-                self.element.attr($attr_name)
-            }
+            $(
+                #[doc = concat!("Returns the value of `", $acc_name, "` attribute.")]
+                $(#[$acc_meta])*
+                pub fn $acc_ident(&self) -> ::core::result::Result<$acc_type, $crate::domtree::error::AttrError> {
+                    self.element.attr($acc_name)
+                }
+            )*
         }
 
         ::paste::paste! {
             impl<E: $crate::domtree::HasAttrMut> $name<E> {
-                pub fn [<set_ $attr_ident>](&mut self, value: $attr_type) {
-                    self.element.set_attr($attr_name, value);
-                }
+                $(
+                    #[doc = concat!("Sets the value of `", $acc_name, "` attribute.")]
+                    $(#[$acc_meta])*
+                    pub fn [<set_ $acc_ident>](&mut self, value: $acc_type) {
+                        self.element.set_attr($acc_name, value);
+                    }
+                )*
             }
         }
     };
@@ -294,6 +333,7 @@ macro_rules! define_unique_children {
     // 終了条件
     (@loop [$($acc:ident,)*] $name:ident {}) => {
         impl<E> $name<E> {
+            /// List of all known child elements.
             pub const CHILDREN: [&str; [$(stringify!($acc),)*].len()] = [$(stringify!($acc),)*];
         }
     };

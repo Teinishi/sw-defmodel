@@ -13,9 +13,9 @@ define_tag!(Definition {
         LinearCompactModule = "linear_compact_module",
         None = "",
     },
-    #[doc = "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8."]
+    #[doc = "\n\nA subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8. See [`ButtonType`] for possible values."]
     "button_type":
-        #[doc = "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8."]
+        #[doc = "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8.\n\n"]
         enum ButtonType u32 {
             Push = 0,
             Toggle = 1,

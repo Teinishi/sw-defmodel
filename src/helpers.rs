@@ -57,5 +57,6 @@ impl<E: HasChildrenMut, T> List<E, T> {
 }
 
 pub trait FromElement<E> {
+    /// Constructs from either `&Element` or `&mut Element`.
     fn from_element(element: E) -> Self;
 }
