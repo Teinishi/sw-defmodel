@@ -1,9 +1,68 @@
+macro_rules! get_first_stringify {
+    ($first:tt $($rest:tt)*) => {
+        stringify!($first)
+    };
+}
+
+macro_rules! get_second_stringify {
+    ($first:tt, $second:tt, $($rest:tt)*) => {
+        stringify!($second)
+    };
+    ($first:tt $(,)?) => {
+        stringify!($first)
+    };
+}
+
+macro_rules! get_third_stringify {
+    ($first:tt, $second:tt, $third:tt, $($rest:tt)*) => {
+        stringify!($third)
+    };
+    ($first:tt, $second:tt $(,)?) => {
+        stringify!($first)
+    };
+    ($first:tt $(,)?) => {
+        stringify!($first)
+    };
+}
+
+macro_rules! get_fourth_stringify {
+    ($first:tt, $second:tt, $third:tt, $fourth:tt, $($rest:tt)*) => {
+        stringify!($fourth)
+    };
+    ($first:tt, $second:tt, $third:tt $(,)?) => {
+        stringify!($first)
+    };
+    ($first:tt, $second:tt $(,)?) => {
+        stringify!($second)
+    };
+    ($first:tt $(,)?) => {
+        stringify!($first)
+    };
+}
+
 // XML属性値を enum として扱えるようにするマクロ
 macro_rules! xml_enum {
-    (enum $name:ident &str {
+    ($(#[$meta:meta])* enum $name:ident &str {
         $($variant:ident = $val:expr),* $(,)?
-    }) => {
-        xml_enum!(@define $name { $($variant = $val),* });
+    } at $path:literal) => {
+        xml_enum!(
+            @define
+            $(#[$meta])*
+            #[doc = concat!(
+                xml_enum!(@doc { $($variant = $val),* } at $path ; $name),
+                "```\n",
+                "use ", $path, "::", stringify!($name), ";\n",
+                "\n",
+                "// Parse from string\n",
+                "let value = ", get_first_stringify!($($val),*), ".parse::<", stringify!($name), ">();\n",
+                "assert_eq!(value, Ok(", stringify!($name), "::", get_first_stringify!($($variant),*), "));\n",
+                "\n",
+                "// Format to string\n",
+                "assert_eq!(&format!(\"{}\", ", stringify!($name), "::", get_second_stringify!($($variant),*), "), ", get_second_stringify!($($val),*), ");\n",
+                "```"
+            )]
+            $name { $($variant = $val),* }
+        );
 
         impl ::core::str::FromStr for $name {
             type Err = ::core::convert::Infallible;
@@ -17,10 +76,34 @@ macro_rules! xml_enum {
         }
     };
 
-    (enum $name:ident $val_type:ty {
+    ($(#[$meta:meta])* enum $name:ident $val_type:ty {
         $($variant:ident = $val:expr),* $(,)?
-    }) => {
-        xml_enum!(@define $name { $($variant = $val),* });
+    } at $path:literal) => {
+        xml_enum!(
+            @define
+            $(#[$meta])*
+            #[doc = concat!(
+                xml_enum!(@doc { $($variant = $val),* } at $path ; $name),
+                "```\n",
+                "use ", $path, "::", stringify!($name), ";\n",
+                "\n",
+                "// Parse from string\n",
+                "let value = \"", get_first_stringify!($($val),*), "\".parse::<", stringify!($name), ">();\n",
+                "assert_eq!(value, Ok(", stringify!($name), "::", get_first_stringify!($($variant),*), "));\n",
+                "\n",
+                "// Format to string\n",
+                "assert_eq!(&format!(\"{}\", ", stringify!($name), "::", get_second_stringify!($($variant),*), "), \"", get_second_stringify!($($val),*), "\");\n",
+                "\n",
+                "// Convert from ", stringify!($val_type), "\n",
+                "let value: ", stringify!($name), " = ", get_third_stringify!($($val),*), ".into();\n",
+                "assert_eq!(value, ", stringify!($name), "::", get_third_stringify!($($variant),*), ");\n",
+                "\n",
+                "// Convert to ", stringify!($val_type), "\n",
+                "assert_eq!(", stringify!($name), "::", get_fourth_stringify!($($variant),*), ".as_value(), Some(", get_fourth_stringify!($($val),*), "));\n",
+                "```"
+            )]
+            $name { $($variant = $val),* }
+        );
 
         impl $name {
             pub fn as_value(&self) -> ::core::option::Option<$val_type> {
@@ -52,9 +135,23 @@ macro_rules! xml_enum {
         }
     };
 
-    (@define $name:ident {
+    (@doc { $($variant:ident = $val:expr),* $(,)? } at $path:literal ; $name:ident) => {
+        concat!(
+            "| Value | Variant |\n",
+            "|-------|--------|\n",
+            $("| ", stringify!($val), " | `", stringify!($variant), "` |\n", )*
+            "\n",
+            "Any other value is stored in [`", stringify!($name), "::Unknown`].\n",
+            "\n",
+            "# Examples\n",
+            "\n",
+        )
+    };
+
+    (@define $(#[$meta:meta])* $name:ident {
         $($variant:ident = $val:expr),* $(,)?
     }) => {
+        $(#[$meta])*
         #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::cmp::PartialEq, ::core::cmp::Eq)]
         pub enum $name {
             $($variant),*,
@@ -98,32 +195,32 @@ macro_rules! define_tag {
     };
 
     (@loop [$($acc:literal,)*] $name:ident {
-        $attr_name:literal => $attr_ident:ident : enum $enum_name:ident &str {
+        $attr_name:literal => $attr_ident:ident : $(#[$meta:meta])* enum $enum_name:ident &str {
             $($variant:ident = $val:expr),* $(,)?
-        }
+        } at $path:literal
         $(, $($rest:tt)*)?
     }) => {
         // attr_type が enum (&str) の場合
         xml_enum! {
-            enum $enum_name &str {
+            $(#[$meta])* enum $enum_name &str {
                 $($variant = $val),*
-            }
+            } at $path
         }
         // 基本形に委譲
         define_tag!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });
     };
 
     (@loop [$($acc:literal,)*] $name:ident {
-        $attr_name:literal => $attr_ident:ident : enum $enum_name:ident $val_type:ty {
+        $attr_name:literal => $attr_ident:ident : $(#[$meta:meta])* enum $enum_name:ident $val_type:ty {
             $($variant:ident = $val:expr),* $(,)?
-        }
+        } at $path:literal
         $(, $($rest:tt)*)?
     }) => {
         // attr_type が enum の場合
         xml_enum! {
-            enum $enum_name $val_type {
+            $(#[$meta])* enum $enum_name $val_type {
                 $($variant = $val),*
-            }
+            } at $path
         }
         // 基本形に委譲
         define_tag!(@loop [$($acc,)*] $name { $attr_name => $attr_ident : $enum_name $(, $($rest)*)? });

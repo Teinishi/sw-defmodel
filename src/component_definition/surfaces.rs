@@ -6,7 +6,7 @@ define_tag!(Surface {
         YNeg = 3,
         ZPos = 4,
         ZNeg = 5,
-    },
+    } at "sw_defmodel::component_definition",
     "rotation": i32,
     "shape": i32,
     "trans_type": i32,

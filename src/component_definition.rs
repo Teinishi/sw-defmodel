@@ -2,7 +2,7 @@ mod definition;
 mod surfaces;
 
 use crate::domtree::{Document, Element, HasChildren, HasChildrenMut};
-pub use definition::Definition;
+pub use definition::*;
 use quick_xml::Reader;
 use std::{io::BufRead, path::Path};
 pub use surfaces::{Surface, SurfaceOrientation};

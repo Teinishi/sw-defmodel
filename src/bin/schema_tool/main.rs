@@ -55,12 +55,16 @@ impl SchemaWriteRule for DefinitionTagRule {
                             ("SmallKeypad", 5),
                             ("LargeKeypad", 6),
                         ],
+                        Some(
+                            "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8.",
+                        ),
                     ));
                 }
                 "light_type" => {
                     return Some(ValueType::new_enum_u32(
                         "LightType",
                         &[("Normal", 0), ("Spotlight", 1)],
+                        None,
                     ));
                 }
                 // TODO: 他

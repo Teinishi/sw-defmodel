@@ -217,6 +217,7 @@ impl SchemaAttribute {
                             .iter()
                             .map(|v| (format!("_{v}"), v.parse().unwrap()))
                             .collect(),
+                        doc: None,
                     };
                 }
                 PrimitiveType::U64 => {
@@ -227,6 +228,7 @@ impl SchemaAttribute {
                             .iter()
                             .map(|v| (format!("_{v}"), v.parse().unwrap()))
                             .collect(),
+                        doc: None,
                     };
                 }
                 PrimitiveType::I32 => {
@@ -237,13 +239,31 @@ impl SchemaAttribute {
                             .iter()
                             .map(|v| (format!("_{v}"), v.parse().unwrap()))
                             .collect(),
+                        doc: None,
                     };
                 }
                 PrimitiveType::String if self.values.iter().all(|v| !v.contains('/')) => {
                     // スラッシュを含むものはファイルパスとみなして enum 化対象外
+                    let mut none_exists = false;
+                    let mut variants: Vec<(String, String)> = self
+                        .values
+                        .iter()
+                        .filter_map(|v| {
+                            if v.is_empty() {
+                                none_exists = true;
+                                None
+                            } else {
+                                Some((v.to_upper_camel_case(), v.clone()))
+                            }
+                        })
+                        .collect();
+                    if none_exists {
+                        variants.push(("None".to_owned(), String::new()));
+                    }
                     return ValueType::EnumString {
                         name,
-                        variants: self.values.iter().map(|v| (v.clone(), v.clone())).collect(),
+                        variants,
+                        doc: None,
                     };
                 }
                 _ => {}
