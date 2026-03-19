@@ -40,6 +40,64 @@ macro_rules! get_fourth_stringify {
     };
 }
 
+// Document をラップして便利メソッドを生やす
+macro_rules! define_root {
+    (
+        #[doc = $doc:expr]
+        $(#[$meta:meta])*
+        struct $name:ident {
+            <$tag_name:ident> => $($root_type:tt)*
+        }
+    ) => {
+        #[doc = $doc]
+        $(#[$meta])*
+        #[derive(Clone, Debug)]
+        pub struct $name {
+            tree: $crate::domtree::Document,
+        }
+
+        impl ComponentDefinition {
+            pub fn from_xml_str(s: &str) -> ::core::result::Result<Self, $crate::domtree::ParseError> {
+                Ok(Self {
+                    tree: $crate::domtree::Document::from_xml_str(s)?,
+                })
+            }
+
+            pub fn from_file<P: ::core::convert::AsRef<::std::path::Path>>(path: P) -> ::core::result::Result<Self, $crate::domtree::ParseError> {
+                Ok(Self {
+                    tree: $crate::domtree::Document::from_file(path)?,
+                })
+            }
+
+            pub fn from_xml_reader<R: ::std::io::BufRead>(reader: &mut Reader<R>) -> ::core::result::Result<Self, $crate::domtree::ParseError> {
+                Ok(Self {
+                    tree: $crate::domtree::Document::from_xml_reader(reader)?,
+                })
+            }
+
+            pub fn write<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
+                self.tree.write(writer)
+            }
+
+            pub fn to_bytes(&self) -> ::std::io::Result<::std::vec::Vec<u8>> {
+                self.tree.to_bytes()
+            }
+
+            pub fn $tag_name(&self) -> ::core::option::Option<$($root_type)*<&$crate::domtree::Element>> {
+                $crate::domtree::HasChildren::single_element_by_name(&self.tree, stringify!($tag_name))
+                    .map(|(el, _)| $($root_type)*::new(el))
+            }
+
+            ::paste::paste! {
+                pub fn [<$tag_name _mut>](&mut self) -> $($root_type)*<&mut $crate::domtree::Element> {
+                    let (el, _) = $crate::domtree::HasChildrenMut::ensure_element(&mut self.tree, stringify!($tag_name));
+                    $($root_type)*::new(el)
+                }
+            }
+        }
+    };
+}
+
 // XML属性値を enum として扱えるようにするマクロ
 macro_rules! xml_enum {
     ($(#[$meta:meta])* enum $name:ident &str {
@@ -349,6 +407,8 @@ macro_rules! define_tag {
                 )*
             }
         }
+
+        // TODO: 属性・子要素の直接取得・操作
     };
 }
 

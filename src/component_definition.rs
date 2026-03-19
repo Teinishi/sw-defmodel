@@ -1,59 +1,22 @@
 pub mod definition;
 pub mod surfaces;
 
-use crate::domtree::{Document, Element, HasChildren, HasChildrenMut, ParseError};
 pub use definition::*;
 use quick_xml::Reader;
-use std::{io::BufRead, path::Path};
 pub use surfaces::{Surface, SurfaceOrientation};
 
-#[derive(Clone, Debug)]
-pub struct ComponentDefinition {
-    tree: Document,
-}
-
-impl ComponentDefinition {
-    pub fn from_xml_str(s: &str) -> Result<Self, ParseError> {
-        Ok(Self {
-            tree: Document::from_xml_str(s)?,
-        })
-    }
-
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ParseError> {
-        Ok(Self {
-            tree: Document::from_file(path)?,
-        })
-    }
-
-    pub fn from_xml_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, ParseError> {
-        Ok(Self {
-            tree: Document::from_xml_reader(reader)?,
-        })
-    }
-
-    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.tree.write(writer)
-    }
-
-    pub fn to_bytes(&self) -> std::io::Result<Vec<u8>> {
-        self.tree.to_bytes()
-    }
-
-    pub fn definition(&self) -> Option<Definition<&Element>> {
-        self.tree
-            .single_element_by_name("definition")
-            .map(|(el, _)| Definition::new(el))
-    }
-
-    pub fn definition_mut(&mut self) -> Definition<&mut Element> {
-        let (el, _) = self.tree.ensure_element("definition");
-        Definition::new(el)
+define_root! {
+    #[doc = "Represents a component definition file."]
+    struct ComponentDefinition {
+        <definition> => Definition
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domtree::Element;
+    use std::path::Path;
 
     fn mutation_test_helper<F>(input: &str, expected: &str, callback: F)
     where
