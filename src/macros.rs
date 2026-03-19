@@ -178,8 +178,30 @@ macro_rules! xml_enum {
 
 // Element をラップして属性と型の対応付けをした struct を作成
 macro_rules! define_tag {
-    ($name:ident { $($body:tt)* }) => {
+    ($(#[$meta:meta])* struct $name:ident { $($body:tt)* }) => {
         // エントリポイント
+        $(#[$meta])*
+        #[doc = concat!(
+            "\n\nTo get access to attributes or children, typed getter/setters are provided for known ones.\n",
+            "\n",
+            "Attribute getters:\n",
+            "- Return an enum value for attributes which is considered to be applicable to represent by an enum.\n",
+            "    - Enums for attributes have `Unknown(String)` variant in preparation for future game update.\n",
+            "- Return `Err(AttrError::NotFound)` if it does not exist in the XML.\n",
+            "- Return `Err(Attr::ParseBoolError)`, `Err(Attr::ParseFloatError)` or `Err(Attr::ParseIntError)` if parsing the value failed.\n",
+            "\n",
+            "Child element getters:\n",
+            "- Return the child element, or `None` if it does not exist.\n",
+            "- If there are two or more in the XML, the last one will be returned.\n",
+            "- Methods with `_mut` suffix in the name return mutable reference to the child element.\n",
+            "    - It creates an element if it does not exist, as it will never fail. The return type is **not** `Option` nor `Result`.\n",
+            "\n",
+            "List getters:\n",
+            "- Return the list of elements in the child element, or `None` if it does not exist.\n",
+            "- Methods with `_mut` suffix in the name return list of mutable reference to the elements.\n",
+            "    - It creates an element if it does not exist, as it will never fail. The return type is **not** `Option` nor `Result`.\n",
+            // TODO: Examples
+        )]
         #[derive(::core::fmt::Debug)]
         pub struct $name<E> {
             pub(crate) element: E,
@@ -202,7 +224,7 @@ macro_rules! define_tag {
     };
 
     (
-        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
         $name:ident {
             $(#[$attr_meta:meta])*
             $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident &str {
@@ -219,13 +241,13 @@ macro_rules! define_tag {
         }
         // 基本形に委譲
         define_tag!(
-            @loop [$([$(#[$acc_meta])* $acc_name => $acc_ident : $acc_type]),*]
+            @loop [$($(#[$acc_meta], )* $acc_name, $acc_ident, $acc_type;)*]
             $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? }
         );
     };
 
     (
-        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
         $name:ident {
             $(#[$attr_meta:meta])*
             $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident $val_type:ty {
@@ -242,35 +264,32 @@ macro_rules! define_tag {
         }
         // 基本形に委譲
         define_tag!(
-            @loop [$([$(#[$acc_meta])* $acc_name => $acc_ident : $acc_type]),*]
+            @loop [$($(#[$acc_meta], )* $acc_name, $acc_ident, $acc_type;)*]
             $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? }
         );
     };
 
     (
-        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
         $name:ident { $(#[$attr_meta:meta])* $attr_name:literal => $attr_ident:ident : $attr_type:ty $(, $($rest:tt)*)? }
     ) => {
         // 基本形 "attr_name" => attr_ident: attr_type
         // 残りがあれば再帰的に処理
         define_tag!(
-            @loop [
-                $([$(#[$acc_meta])* $acc_name => $acc_ident : $acc_type], )*
-                [$(#[$attr_meta])* $attr_name => $attr_ident : $attr_type]
-            ]
+            @loop [$($(#[$acc_meta], )* $acc_name, $acc_ident, $acc_type;)* $(#[$attr_meta], )* $attr_name, $attr_ident, $attr_type;]
             $name { $($($rest)*)? }
         );
     };
 
     (
-        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
         $name:ident { $(#[$attr_meta:meta])* $attr_name:literal : $($rest:tt)* }
     ) => {
         // 省略形 "attr_name": attr_type
         ::paste::paste! {
             // 基本形に委譲
             define_tag!(
-                @loop [$([$(#[$acc_meta])* $acc_name => $acc_ident : $acc_type]),*]
+                @loop [$($(#[$acc_meta], )* $acc_name, $acc_ident, $acc_type;)*]
                 $name { $(#[$attr_meta])* $attr_name => [<$attr_name>] : $($rest)* }
             );
         }
@@ -278,11 +297,22 @@ macro_rules! define_tag {
 
     // 終了条件
     (
-        @loop [$([$(#[$acc_meta:meta])* $acc_name:literal => $acc_ident:ident : $acc_type:ty]),* $(,)?]
+        @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
         $name:ident {}
     ) => {
         impl<E> $name<E> {
-            /// List of all known attributes.
+            #[doc = concat!(
+                "List of all known attributes.\n",
+                "\n",
+                "```\n",
+                "# use ", module_path!(), "::", stringify!($name), ";\n",
+                "# use sw_defmodel::domtree::Element;\n",
+                "assert_eq!(\n",
+                "    ", stringify!($name), "::<&Element>::ATTRIBUTES,\n",
+                "    [", $(stringify!($acc_name), ", "),*, "]\n",
+                ");\n",
+                "```",
+            )]
             pub const ATTRIBUTES: [&'static str; [$($acc_name,)*].len()] = [$($acc_name,)*];
         }
 
@@ -317,43 +347,71 @@ macro_rules! define_unique_children {
         define_unique_children!(@loop [] $name { $($rest)* });
     };
 
-    (@loop [$($acc:ident,)*] $name:ident { <$child_name:ident> => $child_ident:ident : $child_type:tt $(, $($rest:tt)*)? } ) => {
+    (
+        @loop [$($acc_name:ident, $acc_ident:ident, $acc_type:tt;)*]
+        $name:ident { <$child_name:ident> => $child_ident:ident : $child_type:tt $(, $($rest:tt)*)? }
+    ) => {
         // 基本形 <child_name> => child_ident: child_type
-        define_unique_children!(@impl $name { <$child_name> => $child_ident : $child_type });
-
         // 残りがあれば再帰的に処理
-        define_unique_children!(@loop [$($acc,)* $child_name,] $name { $($($rest)*)? });
+        define_unique_children!(
+            @loop [$($acc_name, $acc_ident, $acc_type;)* $child_name, $child_ident, $child_type;]
+            $name { $($($rest)*)? }
+        );
     };
 
-    (@loop [$($acc:ident,)*] $name:ident { <$child_name:ident> : $child_type:tt $(, $($rest:tt)*)? } ) => {
+    (
+        @loop [$($acc_name:ident, $acc_ident:ident, $acc_type:tt;)*]
+        $name:ident { <$child_name:ident> : $child_type:tt $(, $($rest:tt)*)? }
+    ) => {
         // 省略形 <child_name>: child_type
-        define_unique_children!(@loop [$($acc,)*] $name { <$child_name> => $child_name : $child_type $(, $($rest)*)? });
+        define_unique_children!(
+            @loop [$($acc_name, $acc_ident, $acc_type;)*]
+            $name { <$child_name> => $child_name : $child_type $(, $($rest)*)? }
+        );
     };
 
     // 終了条件
-    (@loop [$($acc:ident,)*] $name:ident {}) => {
+    (
+        @loop [$($acc_name:ident, $acc_ident:ident, $acc_type:tt;)*]
+        $name:ident {}
+    ) => {
         impl<E> $name<E> {
-            /// List of all known child elements.
-            pub const CHILDREN: [&str; [$(stringify!($acc),)*].len()] = [$(stringify!($acc),)*];
+            #[doc = concat!(
+                "List of all known unique child elements.\n",
+                "\n",
+                "```\n",
+                "# use ", module_path!(), "::", stringify!($name), ";\n",
+                "# use sw_defmodel::domtree::Element;\n",
+                "assert_eq!(\n",
+                "    ", stringify!($name), "::<&Element>::CHILDREN,\n",
+                "    [", $("\"", stringify!($acc_name), "\", "),*, "]\n",
+                ");\n",
+                "```",
+            )]
+            pub const CHILDREN: [&str; [$(stringify!($acc_name),)*].len()] = [$(stringify!($acc_name),)*];
         }
-    };
 
-    (@impl $name:ident { <$child_name:ident> => $child_ident:ident : $child_type:tt } ) => {
         impl<E: $crate::domtree::HasChildren> $name<E> {
-            pub fn $child_ident(&self) -> ::core::option::Option<$child_type<&$crate::domtree::Element>> {
-                self.element.single_element_by_name(stringify!($child_name)).map(|(el, _)| $child_type::new(el))
-            }
+            $(
+                #[doc = concat!("Returns the child `<", stringify!($acc_name), ">` element, or `None` if it does not exist.\n")]
+                pub fn $acc_ident(&self) -> ::core::option::Option<$acc_type<&$crate::domtree::Element>> {
+                    self.element.single_element_by_name(stringify!($acc_name)).map(|(el, _)| $acc_type::new(el))
+                }
+            )*
         }
 
         ::paste::paste! {
             impl<E: $crate::domtree::HasChildren + $crate::domtree::HasChildrenMut> $name<E> {
-                pub fn [<$child_ident _mut>](&mut self) -> $child_type<&mut $crate::domtree::Element> {
-                    let (el, _) = self.element.ensure_element(stringify!($child_name));
-                    $child_type::new(el)
-                }
+                $(
+                    #[doc = concat!("Returns a mutable reference to the child `<", stringify!($acc_name), ">` element.",)]
+                    pub fn [<$acc_ident _mut>](&mut self) -> $acc_type<&mut $crate::domtree::Element> {
+                        let (el, _) = self.element.ensure_element(stringify!($acc_name));
+                        $acc_type::new(el)
+                    }
+                )*
             }
         }
-    }
+    };
 }
 
 // Element をラップした型に対して、中身のリストを取得するメソッドを定義
@@ -363,44 +421,72 @@ macro_rules! define_lists {
         define_lists!(@loop [] $name { $($rest)* });
     };
 
-    (@loop [$($acc:ident,)*] $name:ident { <$list_name:ident> => $list_ident:ident : [<$item_name:ident> : $item_type:tt] $(, $($rest:tt)*)? } ) => {
+    (
+        @loop [$($acc_name:ident, $acc_ident:ident, $acc_item_name:ident, $acc_item_type:tt;)*]
+        $name:ident { <$list_name:ident> => $list_ident:ident : [<$item_name:ident> : $item_type:tt] $(, $($rest:tt)*)? }
+    ) => {
         // 基本形 <list_name> => list_ident: [<item_name>: item_type]
-        define_lists!(@impl $name { <$list_name> => $list_ident : [<$item_name> : $item_type] });
-
         // 残りがあれば再帰的に処理
-        define_lists!(@loop [$($acc,)* $list_name,] $name { $($($rest)*)? });
+        define_lists!(
+            @loop [$($acc_name, $acc_ident, $acc_item_name, $acc_item_type;)* $list_name, $list_ident, $item_name, $item_type;]
+            $name { $($($rest)*)? }
+        );
     };
 
-    (@loop [$($acc:ident,)*] $name:ident { <$list_name:ident> : [<$item_name:ident> : $item_type:tt] $(, $($rest:tt)*)? } ) => {
+    (
+        @loop [$($acc_name:ident, $acc_ident:ident, $acc_item_name:ident, $acc_item_type:tt;)*]
+        $name:ident { <$list_name:ident> : [<$item_name:ident> : $item_type:tt] $(, $($rest:tt)*)? }
+    ) => {
         // 省略形 <list_name>: [<item_name>: item_type]
-        define_lists!(@loop [$($acc,)*] $name { <$list_name> => $list_name : [<$item_name> : $item_type] $(, $($rest)*)? });
+        define_lists!(
+            @loop [$($acc_name, $acc_ident, $acc_item_name, $acc_item_type;)*]
+            $name { <$list_name> => $list_name : [<$item_name> : $item_type] $(, $($rest)*)? }
+        );
     };
 
     // 終了条件
-    (@loop [$($acc:ident,)*] $name:ident {}) => {
+    (
+        @loop [$($acc_name:ident, $acc_ident:ident, $acc_item_name:ident, $acc_item_type:tt;)*]
+        $name:ident {}
+    ) => {
         impl<E> $name<E> {
-            pub const CHILD_LISTS: [&str; [$(stringify!($acc),)*].len()] = [$(stringify!($acc),)*];
+            #[doc = concat!(
+                "List of all known unique child list elements.\n",
+                "\n",
+                "```\n",
+                "# use ", module_path!(), "::", stringify!($name), ";\n",
+                "# use sw_defmodel::domtree::Element;\n",
+                "assert_eq!(\n",
+                "    ", stringify!($name), "::<&Element>::LISTS,\n",
+                "    [", $("\"", stringify!($acc_name), "\", "),*, "]\n",
+                ");\n",
+                "```",
+            )]
+            pub const LISTS: [&str; [$(stringify!($acc_name),)*].len()] = [$(stringify!($acc_name),)*];
         }
-    };
 
-
-    (@impl $name:ident { <$list_name:ident> => $list_ident:ident : [<$item_name:ident> : $item_type:tt] } ) => {
         impl<E: $crate::domtree::HasChildren> $name<E> {
-            pub fn $list_ident(&self) -> ::core::option::Option<$crate::helpers::List<&$crate::domtree::Element, $item_type<&$crate::domtree::Element>>> {
-                self.element
-                    .single_element_by_name(stringify!($list_name))
-                    .map(|(el, _)| $crate::helpers::List::new(el, stringify!($item_name)))
-            }
+            $(
+                #[doc = concat!("Returns the list of `<", stringify!($acc_item_name), ">` elements in the child `<", stringify!($acc_name), ">` element, or `None` if it does not exist.\n")]
+                pub fn $acc_ident(&self) -> ::core::option::Option<$crate::helpers::List<&$crate::domtree::Element, $acc_item_type<&$crate::domtree::Element>>> {
+                    self.element
+                        .single_element_by_name(stringify!($acc_name))
+                        .map(|(el, _)| $crate::helpers::List::new(el, stringify!($acc_item_name)))
+                }
+            )*
         }
 
         ::paste::paste! {
             impl<E: $crate::domtree::HasChildren + $crate::domtree::HasChildrenMut> $name<E> {
-                pub fn [<$list_ident _mut>](&mut self) -> $crate::helpers::List<&mut $crate::domtree::Element, $item_type<&mut $crate::domtree::Element>> {
-                    let (el, _) = self.element
-                        .ensure_element(stringify!($list_name));
-                    $crate::helpers::List::new(el, stringify!($item_name))
-                }
+                $(
+                    #[doc = concat!("Returns the list of mutable references to `<", stringify!($acc_item_name), ">` elements in the child `<", stringify!($acc_name), ">` element.\n")]
+                    pub fn [<$acc_ident _mut>](&mut self) -> $crate::helpers::List<&mut $crate::domtree::Element, $acc_item_type<&mut $crate::domtree::Element>> {
+                        let (el, _) = self.element
+                            .ensure_element(stringify!($acc_name));
+                        $crate::helpers::List::new(el, stringify!($acc_item_name))
+                    }
+                )*
             }
         }
-    }
+    };
 }

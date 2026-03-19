@@ -1,4 +1,4 @@
-define_tag!(Surface {
+define_tag!(struct Surface {
     "orientation": enum SurfaceOrientation u32 {
         XPos = 0,
         XNeg = 1,
