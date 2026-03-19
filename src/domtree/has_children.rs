@@ -28,7 +28,7 @@ pub trait HasChildren {
     }
 }
 
-pub trait HasChildrenMut {
+pub trait HasChildrenMut: HasChildren {
     fn children_mut(&mut self) -> &mut Vec<Node>;
 
     fn get_child_mut(&mut self, index: usize) -> Option<&mut Node> {

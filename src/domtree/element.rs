@@ -112,7 +112,7 @@ pub trait HasAttr {
         AttrError: From<E>;
 }
 
-pub trait HasAttrMut {
+pub trait HasAttrMut: HasAttr {
     fn set_attr<K: AsRef<[u8]>, T: Display>(&mut self, key: K, value: T);
 }
 

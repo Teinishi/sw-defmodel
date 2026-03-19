@@ -214,9 +214,15 @@ macro_rules! define_tag {
             }
         }
 
-        impl<E> $crate::helpers::FromElement<E> for $name<E> {
-            fn from_element(element: E) -> Self {
-                Self { element }
+        impl<'a> ::core::convert::From<&'a $crate::domtree::Element> for $name<&'a $crate::domtree::Element> {
+            fn from(value: &'a $crate::domtree::Element) -> Self {
+                Self { element: value }
+            }
+        }
+
+        impl<'a> ::core::convert::From<&'a mut $crate::domtree::Element> for $name<&'a mut $crate::domtree::Element> {
+            fn from(value: &'a mut $crate::domtree::Element) -> Self {
+                Self { element: value }
             }
         }
 
@@ -401,7 +407,7 @@ macro_rules! define_unique_children {
         }
 
         ::paste::paste! {
-            impl<E: $crate::domtree::HasChildren + $crate::domtree::HasChildrenMut> $name<E> {
+            impl<E: $crate::domtree::HasChildrenMut> $name<E> {
                 $(
                     #[doc = concat!("Returns a mutable reference to the child `<", stringify!($acc_name), ">` element.",)]
                     pub fn [<$acc_ident _mut>](&mut self) -> $acc_type<&mut $crate::domtree::Element> {
@@ -477,7 +483,7 @@ macro_rules! define_lists {
         }
 
         ::paste::paste! {
-            impl<E: $crate::domtree::HasChildren + $crate::domtree::HasChildrenMut> $name<E> {
+            impl<E: $crate::domtree::HasChildrenMut> $name<E> {
                 $(
                     #[doc = concat!("Returns the list of mutable references to `<", stringify!($acc_item_name), ">` elements in the child `<", stringify!($acc_name), ">` element.\n")]
                     pub fn [<$acc_ident _mut>](&mut self) -> $crate::helpers::List<&mut $crate::domtree::Element, $acc_item_type<&mut $crate::domtree::Element>> {
