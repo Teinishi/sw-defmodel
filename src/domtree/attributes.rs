@@ -1,4 +1,4 @@
-use super::error::AttrError;
+use super::errors::{AttrError, ParseError};
 use crate::utils::{debug_utf8, escape_xml, leading_whitespaces, unescape_xml};
 use std::{
     fmt::{Debug, Display},
@@ -38,12 +38,12 @@ impl Default for Attributes {
 }
 
 impl Attributes {
-    pub fn new(input: &[u8]) -> Self {
-        let (slots, trailing_space) = AttrScanner::new(input).scan();
-        Self {
+    pub fn new(input: &[u8]) -> Result<Self, ParseError> {
+        let (slots, trailing_space) = AttrScanner::new(input).scan()?;
+        Ok(Self {
             slots,
             trailing_space,
-        }
+        })
     }
 
     pub fn get_unescaped<K: AsRef<[u8]>>(&self, key: K) -> Option<String> {
@@ -207,7 +207,7 @@ impl<'a> AttrScanner<'a> {
         self.input[start..self.pos].to_vec()
     }
 
-    fn scan(&mut self) -> (Vec<AttrSlot>, Vec<u8>) {
+    fn scan(&mut self) -> Result<(Vec<AttrSlot>, Vec<u8>), ParseError> {
         let mut slots = Vec::new();
         let trailing_space;
 
@@ -234,15 +234,14 @@ impl<'a> AttrScanner<'a> {
             self.consume_whitespace();
             if self.consume() != Some(b'=') {
                 // 文法エラー
-                todo!();
+                return Err(ParseError::ExpectedEq);
             }
             self.consume_whitespace();
 
             let quote = self.consume().unwrap_or(b'"');
 
             if quote != b'"' && quote != b'\'' {
-                // TODO: Err を返すようにする
-                panic!("Unexpected quote: {}", quote);
+                return Err(ParseError::ExpectedQuote);
             }
 
             // 属性値のパース
@@ -260,6 +259,6 @@ impl<'a> AttrScanner<'a> {
             });
         }
 
-        (slots, trailing_space)
+        Ok((slots, trailing_space))
     }
 }

@@ -332,7 +332,7 @@ macro_rules! define_tag {
             $(
                 #[doc = concat!("Returns the value of `", $acc_name, "` attribute.")]
                 $(#[$acc_meta])*
-                pub fn $acc_ident(&self) -> ::core::result::Result<$acc_type, $crate::domtree::error::AttrError> {
+                pub fn $acc_ident(&self) -> ::core::result::Result<$acc_type, $crate::domtree::AttrError> {
                     self.element.attr($acc_name)
                 }
             )*

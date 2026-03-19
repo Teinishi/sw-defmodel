@@ -1,4 +1,4 @@
-use super::{HasChildren, HasChildrenMut, Node, attributes::Attributes, error::AttrError};
+use super::{HasChildren, HasChildrenMut, Node, attributes::Attributes, errors::{AttrError, ParseError}};
 use crate::utils::debug_utf8;
 use std::{
     fmt::{Debug, Display},
@@ -46,13 +46,13 @@ impl Element {
     pub(crate) fn from_bytes_start(
         e: quick_xml::events::BytesStart<'_>,
         is_self_closing: bool,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ParseError> {
+        Ok(Self {
             name: e.name().as_ref().into(),
-            attributes: Attributes::new(e.attributes_raw()),
+            attributes: Attributes::new(e.attributes_raw())?,
             children: Vec::new(),
             is_self_closing,
-        }
+        })
     }
 
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {

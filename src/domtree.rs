@@ -1,11 +1,12 @@
 mod attributes;
 mod element;
-pub mod error;
+pub mod errors;
 mod has_children;
 mod node;
 
 pub use attributes::{AttrSlot, Attributes};
 pub use element::{Element, HasAttr, HasAttrMut};
+pub use errors::{AttrError, ParseError};
 pub use has_children::{HasChildren, HasChildrenMut};
 pub use node::Node;
 use quick_xml::{Reader, errors::IllFormedError, events::Event};
@@ -17,31 +18,31 @@ pub struct Document {
 }
 
 impl Document {
-    pub fn from_xml_str(s: &str) -> Result<Self, quick_xml::Error> {
+    pub fn from_xml_str(s: &str) -> Result<Self, ParseError> {
         let mut reader = Reader::from_str(s);
         Self::from_xml_reader(&mut reader)
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, quick_xml::Error> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ParseError> {
         let mut reader = Reader::from_file(path)?;
         Self::from_xml_reader(&mut reader)
     }
 
-    pub fn from_xml_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, quick_xml::Error> {
+    pub fn from_xml_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, ParseError> {
         let mut builder = TreeBuilder::default();
 
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(e) => {
-                    let el = Element::from_bytes_start(e, false);
+                    let el = Element::from_bytes_start(e, false)?;
                     builder.start_element(el);
                 }
                 Event::End(e) => {
                     builder.end_element(e.name().as_ref())?;
                 }
                 Event::Empty(e) => {
-                    let el = Element::from_bytes_start(e, true);
+                    let el = Element::from_bytes_start(e, true)?;
                     builder.push_node(Node::Element(el));
                 }
                 Event::Text(e) => builder.push_node(Node::Text(e.into_inner().into_owned())),
@@ -424,5 +425,16 @@ mod tests {
                 .expect("cannot remove attribute `abc`");
             assert_eq!(abc.value(), "def");
         });
+    }
+
+    #[test]
+    fn errors() {
+        let input = "<root abc />";
+        let r = Document::from_xml_str(input);
+        assert!(matches!(r, Err(ParseError::ExpectedEq)));
+
+        let input = "<root abc=def />";
+        let r = Document::from_xml_str(input);
+        assert!(matches!(r, Err(ParseError::ExpectedQuote)));
     }
 }

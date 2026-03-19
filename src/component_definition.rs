@@ -1,7 +1,7 @@
 pub mod definition;
 pub mod surfaces;
 
-use crate::domtree::{Document, Element, HasChildren, HasChildrenMut};
+use crate::domtree::{Document, Element, HasChildren, HasChildrenMut, ParseError};
 pub use definition::*;
 use quick_xml::Reader;
 use std::{io::BufRead, path::Path};
@@ -13,19 +13,19 @@ pub struct ComponentDefinition {
 }
 
 impl ComponentDefinition {
-    pub fn from_xml_str(s: &str) -> Result<Self, quick_xml::Error> {
+    pub fn from_xml_str(s: &str) -> Result<Self, ParseError> {
         Ok(Self {
             tree: Document::from_xml_str(s)?,
         })
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, quick_xml::Error> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ParseError> {
         Ok(Self {
             tree: Document::from_file(path)?,
         })
     }
 
-    pub fn from_xml_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, quick_xml::Error> {
+    pub fn from_xml_reader<R: BufRead>(reader: &mut Reader<R>) -> Result<Self, ParseError> {
         Ok(Self {
             tree: Document::from_xml_reader(reader)?,
         })
@@ -212,7 +212,7 @@ mod tests {
                             failed.store(true, Ordering::Relaxed);
                             let mut guard = first_error.lock().expect("mutex poisoned");
                             if guard.is_none() {
-                                *guard = Some((path.clone(), e.to_string()));
+                                *guard = Some((path.clone(), format!("{:?}", e)));
                             }
                             break;
                         }
