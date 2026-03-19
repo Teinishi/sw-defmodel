@@ -13,6 +13,28 @@ use std::{
 };
 use write_rule::{OverrideAttribute, SchemaWriteRule};
 
+const DEFINE_VEC3I: &str = r#"
+define_tag! {
+    #[doc = "Represents an element with integer attributes `x`, `y`, and `z`."]
+    struct Vec3i {
+        "x": i32,
+        "y": i32,
+        "z": i32,
+    }
+}
+"#;
+
+const DEFINE_VEC3F: &str = r#"
+define_tag! {
+    #[doc = "Represents an element with float attributes `x`, `y`, and `z`."]
+    struct Vec3f {
+        "x": f32,
+        "y": f32,
+        "z": f32,
+    }
+}
+"#;
+
 fn main() -> io::Result<()> {
     // test_data/vanilla_definitions から <definition> のスキーマを生成
     analyze_schema(
@@ -35,6 +57,7 @@ struct DefinitionTagRule {
 
 impl SchemaWriteRule for DefinitionTagRule {
     const MAX_ENUM: usize = 10; // 属性値の自動判定で enum にするしきい値
+    const TARGET_LABEL: &str = "component definition files";
 
     fn before_define_attribute(
         &mut self,
@@ -99,24 +122,10 @@ impl SchemaWriteRule for DefinitionTagRule {
     fn finalize<W: Write>(&mut self, f: &mut io::BufWriter<W>, tag_name: &str) -> io::Result<()> {
         if tag_name == "definition" {
             if self.vec3i {
-                write_code!(
-                    f,
-                    define_tag!(Vec3i {
-                        "x": i32,
-                        "y": i32,
-                        "z": i32,
-                    });
-                )?;
+                write!(f, "{}", DEFINE_VEC3I)?;
             }
             if self.vec3f {
-                write_code!(
-                    f,
-                    define_tag!(Vec3f {
-                        "x": f32,
-                        "y": f32,
-                        "z": f32,
-                    });
-                )?;
+                write!(f, "{}", DEFINE_VEC3F)?;
             }
         }
 

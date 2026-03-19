@@ -6,6 +6,7 @@ use std::io;
 
 pub(super) trait SchemaWriteRule {
     const MAX_ENUM: usize;
+    const TARGET_LABEL: &str;
 
     #[expect(unused_variables)]
     fn before_define_attribute(

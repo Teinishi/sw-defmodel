@@ -25,30 +25,37 @@ pub(super) fn write_define_tag<W: Write, R: SchemaWriteRule>(
     attributes: Vec<SchemaAttribute>,
     rule: &mut R,
 ) -> io::Result<()> {
-    writeln!(f, "define_tag!({name} {{")?;
+    writeln!(f, "define_tag! {{")?;
+    writeln!(
+        f,
+        "    #[doc = \"Represents `<{tag_name}>` tag in {}.\"]",
+        R::TARGET_LABEL
+    )?;
+    writeln!(f, "    struct {name} {{")?;
 
     for attr in attributes {
         let override_type = rule.before_define_attribute(tag_name, &attr);
         let key = attr.get_key();
 
         if let Some(doc) = override_type.doc {
-            writeln!(f, "    #[doc = {:?}]", doc)?;
+            writeln!(f, "        #[doc = {:?}]", doc)?;
         }
 
         if RUST_KEYWORDS.contains(&key.as_str()) {
-            write!(f, "    {:?} => {}_attr: ", key, key)?;
+            write!(f, "        {:?} => {}_attr: ", key, key)?;
         } else {
-            write!(f, "    {:?}: ", key)?;
+            write!(f, "        {:?}: ", key)?;
         }
 
         let value_type = override_type
             .val_type
             .unwrap_or_else(|| attr.get_value_type(R::MAX_ENUM));
-        value_type.write(f, "    ")?;
+        value_type.write(f, "        ")?;
         writeln!(f, ",")?;
     }
 
-    writeln!(f, "}});")
+    writeln!(f, "    }}")?;
+    writeln!(f, "}}")
 }
 
 // define_unique_children マクロで親と子要素の紐づけ定義
@@ -109,6 +116,7 @@ pub(super) fn write_define_lists<W: Write>(
     writeln!(f, "}});")
 }
 
+#[expect(unused)]
 macro_rules! write_code {
     ($f:expr, $($t:tt)*) => {
         write!($f, "{}", stringify!($($t)*))
