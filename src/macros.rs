@@ -178,11 +178,12 @@ macro_rules! xml_enum {
 
 // Element をラップして属性と型の対応付けをした struct を作成
 macro_rules! define_tag {
-    ($(#[$meta:meta])* struct $name:ident { $($body:tt)* }) => {
+    (#[doc = $doc:expr] $(#[$meta:meta])* struct $name:ident { $($body:tt)* }) => {
         // エントリポイント
-        $(#[$meta])*
+        #[doc = $doc]
+        #[doc = "\n\n"]
         #[doc = concat!(
-            "\n\nTo get access to attributes or children, typed getter/setters are provided for known ones.\n",
+            "To get access to attributes or children, typed getter/setters are provided for known ones.\n",
             "\n",
             "Attribute getters:\n",
             "- Return an enum value for attributes which is considered to be applicable to represent by an enum.\n",
@@ -202,6 +203,7 @@ macro_rules! define_tag {
             "    - It creates an element if it does not exist, as it will never fail. The return type is **not** `Option` nor `Result`.\n",
             // TODO: Examples
         )]
+        $(#[$meta])*
         #[derive(::core::fmt::Debug)]
         pub struct $name<E> {
             pub(crate) element: E,
@@ -233,7 +235,7 @@ macro_rules! define_tag {
         @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
         $name:ident {
             $(#[$attr_meta:meta])*
-            $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident &str {
+            $attr_name:literal => $attr_ident:ident : #[doc = $doc:expr] $(#[$enum_meta:meta])* enum $enum_name:ident &str {
                 $($variant:ident = $val:expr),* $(,)?
             }
             $(, $($rest:tt)*)?
@@ -241,7 +243,9 @@ macro_rules! define_tag {
     ) => {
         // attr_type が enum (&str) の場合
         xml_enum! {
-            $(#[$enum_meta])* enum $enum_name &str {
+            #[doc = $doc]
+            $(#[$enum_meta])*
+            enum $enum_name &str {
                 $($variant = $val),*
             }
         }
@@ -256,7 +260,7 @@ macro_rules! define_tag {
         @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
         $name:ident {
             $(#[$attr_meta:meta])*
-            $attr_name:literal => $attr_ident:ident : $(#[$enum_meta:meta])* enum $enum_name:ident $val_type:ty {
+            $attr_name:literal => $attr_ident:ident : #[doc = $doc:expr] $(#[$enum_meta:meta])* enum $enum_name:ident $val_type:ty {
                 $($variant:ident = $val:expr),* $(,)?
             }
             $(, $($rest:tt)*)?
@@ -264,7 +268,9 @@ macro_rules! define_tag {
     ) => {
         // attr_type が enum の場合
         xml_enum! {
-            $(#[$enum_meta])* enum $enum_name $val_type {
+            #[doc = $doc]
+            $(#[$enum_meta])*
+            enum $enum_name $val_type {
                 $($variant = $val),*
             }
         }

@@ -10,11 +10,13 @@ define_tag!(
         "value": u32,
         "flags": u64,
         "tags": String,
-        "extender_name": enum ExtenderName &str {
-            LinearModule = "linear_module",
-            LinearCompactModule = "linear_compact_module",
-            None = "",
-        },
+        "extender_name":
+            #[doc = ""]
+            enum ExtenderName &str {
+                LinearModule = "linear_module",
+                LinearCompactModule = "linear_compact_module",
+                None = "",
+            },
         #[doc = "\n\nA subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8. See [`ButtonType`] for possible values."]
         "button_type":
             #[doc = "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8.\n\n"]
@@ -40,8 +42,11 @@ define_lists!(Definition {
     <buoyancy_surfaces>: [<surface>: Surface],
 });
 
-define_tag!(struct Vec3i {
-    "x": i32,
-    "y": i32,
-    "z": i32,
-});
+define_tag! {
+    #[doc = ""]
+    struct Vec3i {
+        "x": i32,
+        "y": i32,
+        "z": i32,
+    }
+}
