@@ -5,7 +5,7 @@ mod enums;
 mod schema_analyzer;
 mod write_rule;
 
-use enums::{ChildElementType, parse_ok_all};
+use enums::{ChildElementType, PrimitiveType, parse_ok_all};
 use schema_analyzer::{SchemaAttribute, SchemaChild, analyze_schema};
 use std::{
     io::{self, Write},
@@ -42,6 +42,7 @@ fn main() -> io::Result<()> {
             .join("test_data")
             .join("vanilla_definitions")],
         "definition",
+        "component_definition",
         &mut DefinitionTagRule::default(),
     )?;
 
@@ -64,35 +65,51 @@ impl SchemaWriteRule for DefinitionTagRule {
         tag_name: &str,
         attribute: &SchemaAttribute,
     ) -> OverrideAttribute {
-        if tag_name == "definition" {
-            match attribute.get_key().as_ref() {
-                "button_type" => {
-                    return OverrideAttribute::enum_u32(
-                        "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8.",
-                        "ButtonType",
-                        &[
-                            ("Push", 0),
-                            ("Toggle", 1),
-                            ("Key", 2),
-                            ("Lockable", 3),
-                            ("ThrottleLever", 4),
-                            ("SmallKeypad", 5),
-                            ("LargeKeypad", 6),
-                        ],
-                    );
-                }
-                "light_type" => {
-                    return OverrideAttribute::enum_u32(
-                        "", // TODO
-                        "LightType",
-                        &[("Normal", 0), ("Spotlight", 1)],
-                    );
-                }
-                // TODO: 他
-                _ => {}
+        match (tag_name, attribute.get_key().as_ref()) {
+            ("definition", "button_type") => OverrideAttribute::enum_u32(
+                Some(
+                    "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8.",
+                ),
+                "ButtonType",
+                &[
+                    ("Push", 0),
+                    ("Toggle", 1),
+                    ("Key", 2),
+                    ("Lockable", 3),
+                    ("ThrottleLever", 4),
+                    ("SmallKeypad", 5),
+                    ("LargeKeypad", 6),
+                ],
+            ),
+            ("definition", "light_type") => {
+                OverrideAttribute::enum_u32(None, "LightType", &[("Normal", 0), ("Spotlight", 1)])
             }
+            ("surface", "orientation") => OverrideAttribute::enum_u32(
+                None,
+                "Orientation",
+                &[
+                    ("XPos", 0),
+                    ("XNeg", 1),
+                    ("YPos", 2),
+                    ("YNeg", 3),
+                    ("ZPos", 4),
+                    ("ZNeg", 5),
+                ],
+            ),
+            ("surface", "rotation") => OverrideAttribute::enum_u32(
+                None,
+                "Rotation",
+                &[("_0", 0), ("_1", 1), ("_2", 2), ("_3", 3)],
+            ),
+            ("surface", "shape") | ("surface", "flags") => {
+                OverrideAttribute::primitive(None, PrimitiveType::U32)
+            }
+            ("surface", "trans_type") => {
+                OverrideAttribute::enum_u32(None, "TransType", &[("_0", 0), ("_1", 1), ("_2", 2)])
+            }
+            // TODO: 他
+            _ => OverrideAttribute::default(),
         }
-        Default::default()
     }
 
     fn before_scan_child(
@@ -119,13 +136,20 @@ impl SchemaWriteRule for DefinitionTagRule {
         None
     }
 
-    fn finalize<W: Write>(&mut self, f: &mut io::BufWriter<W>, tag_name: &str) -> io::Result<()> {
+    fn finalize<W: Write>(
+        &mut self,
+        f: &mut W,
+        tag_name: &str,
+        items: &mut Vec<String>,
+    ) -> io::Result<()> {
         if tag_name == "definition" {
             if self.vec3i {
                 write!(f, "{}", DEFINE_VEC3I)?;
+                items.push("Vec3i".to_owned());
             }
             if self.vec3f {
                 write!(f, "{}", DEFINE_VEC3F)?;
+                items.push("Vec3f".to_owned());
             }
         }
 

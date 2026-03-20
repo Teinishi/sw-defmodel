@@ -29,8 +29,9 @@ pub(super) trait SchemaWriteRule {
     #[expect(unused_variables)]
     fn finalize<W: io::Write>(
         &mut self,
-        f: &mut io::BufWriter<W>,
+        f: &mut W,
         tag_name: &str,
+        items: &mut Vec<String>,
     ) -> io::Result<()> {
         Ok(())
     }
@@ -44,69 +45,85 @@ pub(super) struct OverrideAttribute {
 
 impl OverrideAttribute {
     #[allow(dead_code)]
-    pub(super) fn primitive(doc: &'static str, prim: PrimitiveType) -> Self {
+    pub(super) fn primitive(doc: Option<&'static str>, prim: PrimitiveType) -> Self {
         Self {
-            doc: Some(doc),
+            doc,
             val_type: Some(ValueType::Primitive(prim)),
         }
     }
 
     #[allow(dead_code)]
-    pub(super) fn enum_u32(doc: &'static str, name: &str, variants: &[(&str, u32)]) -> Self {
+    pub(super) fn enum_u32(
+        doc: Option<&'static str>,
+        name: &str,
+        variants: &[(&str, u32)],
+    ) -> Self {
         Self {
-            doc: Some(doc),
+            doc,
             val_type: Some(ValueType::EnumU32 {
                 name: name.to_owned(),
                 variants: variants
                     .iter()
                     .map(|(vn, vv)| (vn.to_string(), *vv))
                     .collect(),
-                doc: Some(doc),
+                doc: None,
             }),
         }
     }
 
     #[allow(dead_code)]
-    pub(super) fn enum_u64(doc: &'static str, name: &str, variants: &[(&str, u64)]) -> Self {
+    pub(super) fn enum_u64(
+        doc: Option<&'static str>,
+        name: &str,
+        variants: &[(&str, u64)],
+    ) -> Self {
         Self {
-            doc: Some(doc),
+            doc,
             val_type: Some(ValueType::EnumU64 {
                 name: name.to_owned(),
                 variants: variants
                     .iter()
                     .map(|(vn, vv)| (vn.to_string(), *vv))
                     .collect(),
-                doc: Some(doc),
+                doc: None,
             }),
         }
     }
 
     #[allow(dead_code)]
-    pub(super) fn enum_i32(doc: &'static str, name: &str, variants: &[(&str, i32)]) -> Self {
+    pub(super) fn enum_i32(
+        doc: Option<&'static str>,
+        name: &str,
+        variants: &[(&str, i32)],
+    ) -> Self {
         Self {
-            doc: Some(doc),
+            doc,
             val_type: Some(ValueType::EnumI32 {
                 name: name.to_owned(),
                 variants: variants
                     .iter()
                     .map(|(vn, vv)| (vn.to_string(), *vv))
                     .collect(),
-                doc: Some(doc),
+                doc: None,
             }),
         }
     }
 
     #[allow(dead_code)]
-    pub(super) fn enum_str(doc: &'static str, name: &str, variants: &[(&str, &str)]) -> Self {
+    pub(super) fn enum_str(
+        doc: Option<&'static str>,
+        name: &str,
+        variants: &[(&str, &str)],
+    ) -> Self {
         Self {
-            doc: Some(doc),
+            doc,
             val_type: Some(ValueType::EnumString {
                 name: name.to_owned(),
                 variants: variants
                     .iter()
                     .map(|(vn, vv)| (vn.to_string(), vv.to_string()))
                     .collect(),
-                doc: Some(doc),
+                doc: None,
             }),
         }
     }

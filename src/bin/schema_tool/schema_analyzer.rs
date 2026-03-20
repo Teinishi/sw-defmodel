@@ -1,21 +1,54 @@
 use super::{
     enums::{ChildElementType, PrimitiveType, ValueType},
-    write_macros::{write_define_lists, write_define_tag, write_define_unique_children},
+    write_macros::{
+        write_define_lists, write_define_root, write_define_tag, write_define_unique_children,
+    },
     write_rule::SchemaWriteRule,
 };
+use core::panic;
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use std::{
     collections::HashMap,
     fmt::Debug,
     fs::{self, File},
-    io::{self, BufWriter, Write as _},
-    path::Path,
+    io::{self, BufWriter, Read, Write as _},
+    path::{Path, PathBuf},
 };
 use sw_defmodel::domtree::{Document, Element, HasChildren};
+
+fn get_new_path(path: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+
+    // パスが存在しない場合はそのまま返す
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    let ext = path.extension().and_then(|s| s.to_str());
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+
+    let mut counter = 1;
+    loop {
+        // 新しいファイル名を生成
+        let new_filename = match ext {
+            Some(e) => format!("{}_{}.{}", stem, counter, e),
+            None => format!("{}_{}", stem, counter),
+        };
+
+        let new_path = parent.join(new_filename);
+
+        if !new_path.exists() {
+            return new_path;
+        }
+        counter += 1;
+    }
+}
 
 pub(super) fn analyze_schema<P: AsRef<Path> + Debug, R: SchemaWriteRule>(
     dirs: &[P],
     tag_name: &str,
+    module_name: &str,
     rule: &mut R,
 ) -> io::Result<()> {
     let mut schema = SchemaElement::default();
@@ -38,10 +71,52 @@ pub(super) fn analyze_schema<P: AsRef<Path> + Debug, R: SchemaWriteRule>(
         }
     }
 
-    let output_dir = Path::new("tmp").join(tag_name);
-    fs::create_dir_all(&output_dir)?;
+    let output_path = Path::new("tmp").join(module_name);
+    let output_path_rs = output_path.with_extension("rs");
+    if output_path.is_dir() {
+        fs::remove_dir_all(&output_path)?;
+    }
+    if output_path_rs.is_file() {
+        fs::remove_file(&output_path_rs)?;
+    }
+    fs::create_dir_all(&output_path)?;
+    let module_structure = schema.write(&output_path, tag_name, rule)?;
 
-    schema.write(output_dir, tag_name, rule)
+    let mut f = BufWriter::new(File::create(output_path_rs)?);
+
+    let mut stack = vec![&module_structure];
+    let mut module_items_map: Vec<(String, Vec<String>)> = Vec::new();
+    loop {
+        if let Some(m) = stack.pop() {
+            if !module_items_map.iter().any(|(k, _)| k == &m.name) {
+                writeln!(f, "mod {};", m.name)?;
+                let mut items = vec![m.main_item.clone()];
+                items.extend_from_slice(&m.items);
+                module_items_map.push((m.name.clone(), items));
+                for submodule in m.submodules.iter().rev() {
+                    stack.push(submodule);
+                }
+            }
+        } else {
+            break;
+        }
+    }
+    writeln!(f, "")?;
+    for (k, items) in &module_items_map {
+        write!(f, "use {k}::{{")?;
+        for (i, item) in items.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            f.write_all(item.as_bytes())?;
+        }
+        writeln!(f, "}};")?;
+    }
+    writeln!(f, "")?;
+
+    write_define_root(&mut f, tag_name, &module_structure.main_item, rule)?;
+
+    Ok(())
 }
 
 #[derive(Default, Debug)]
@@ -98,16 +173,23 @@ impl SchemaElement {
         path: P,
         tag_name: &str,
         rule: &mut R,
-    ) -> io::Result<()> {
-        let name = tag_name.to_snake_case();
-        let struct_name = tag_name.to_upper_camel_case();
+    ) -> io::Result<ModuleStructure> {
+        let mut module =
+            ModuleStructure::new(tag_name.to_snake_case(), tag_name.to_upper_camel_case());
+        let name = &module.name;
+        let struct_name = &module.main_item;
 
-        let mut f = BufWriter::new(File::create(
-            path.as_ref().join(&name).with_extension("rs"),
-        )?);
+        let mut f = Vec::new();
 
         // 属性定義
-        write_define_tag(&mut f, tag_name, &struct_name, self.attributes, rule)?;
+        write_define_tag(
+            &mut f,
+            tag_name,
+            &struct_name,
+            self.attributes,
+            rule,
+            &mut module.items,
+        )?;
 
         // 子要素スキャン
         let mut child_lists = Vec::new();
@@ -157,14 +239,16 @@ impl SchemaElement {
                 continue;
             }
             let child_name = child.get_name().to_owned();
-            let child_struct_name = child_name.to_upper_camel_case();
+            let child_struct_name: String = child_name.to_upper_camel_case();
             writeln!(f, "")?;
+            module.items.push(child_struct_name.clone());
             write_define_tag(
                 &mut f,
                 &child_name,
                 &child_struct_name,
                 child.schema.attributes,
                 rule,
+                &mut module.items,
             )?;
         }
 
@@ -172,11 +256,27 @@ impl SchemaElement {
         for child in child_lists {
             for item in child.schema.children {
                 let item_name = item.get_name().to_owned();
-                item.schema.write(path.as_ref(), &item_name, rule)?;
+                let submodule = item.schema.write(path.as_ref(), &item_name, rule)?;
+                module.submodules.push(submodule);
             }
         }
 
-        rule.finalize(&mut f, tag_name)
+        rule.finalize(&mut f, tag_name, &mut module.items)?;
+
+        // 内容不一致の名前被りがあれば中断
+        let path = path.as_ref().join(&name).with_extension("rs");
+        if path.is_file() {
+            let mut buf = Vec::new();
+            File::open(&path)?.read_to_end(&mut buf)?;
+            if &buf != &f {
+                BufWriter::new(File::create(get_new_path(&path))?).write_all(&f)?;
+                panic!("Module name conflict: {}", &name);
+            }
+        } else {
+            BufWriter::new(File::create(path)?).write_all(&f)?;
+        }
+
+        Ok(module)
     }
 }
 
@@ -293,5 +393,24 @@ impl SchemaChild {
 
     pub(super) fn get_name(&self) -> &str {
         std::str::from_utf8(&self.name).expect("utf-8 error")
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct ModuleStructure {
+    pub(super) name: String,
+    pub(super) main_item: String,
+    pub(super) items: Vec<String>,
+    pub(super) submodules: Vec<ModuleStructure>,
+}
+
+impl ModuleStructure {
+    pub(super) fn new(name: String, main_item: String) -> Self {
+        Self {
+            name,
+            main_item,
+            items: Vec::new(),
+            submodules: Vec::new(),
+        }
     }
 }

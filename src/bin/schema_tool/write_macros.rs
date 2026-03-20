@@ -3,7 +3,7 @@ use super::{
     write_rule::SchemaWriteRule,
 };
 use heck::{ToSnakeCase, ToUpperCamelCase};
-use std::io::{self, BufWriter, Write};
+use std::io::{self, Write};
 
 const RUST_KEYWORDS: [&str; 50] = [
     "as", "async", "await", "break", "const", "continue", "crate", "else", "enum", "extern",
@@ -17,13 +17,28 @@ pub(super) trait WriteWithIndent {
     fn write<W: Write>(&self, f: &mut W, indent: &str) -> io::Result<()>;
 }
 
+pub(super) fn write_define_root<W: Write, R: SchemaWriteRule>(
+    f: &mut W,
+    tag_name: &str,
+    name: &str,
+    _rule: &mut R,
+) -> io::Result<()> {
+    writeln!(f, "define_root! {{")?;
+    writeln!(f, "    #[doc = \"Represents {}.\"]", R::TARGET_LABEL)?;
+    writeln!(f, "    struct {name} {{")?;
+    writeln!(f, "        <{tag_name}> => Definition")?;
+    writeln!(f, "    }}")?;
+    writeln!(f, "}}")
+}
+
 // define_tag マクロで属性定義
 pub(super) fn write_define_tag<W: Write, R: SchemaWriteRule>(
-    f: &mut BufWriter<W>,
+    f: &mut W,
     tag_name: &str,
     name: &str,
     attributes: Vec<SchemaAttribute>,
     rule: &mut R,
+    items: &mut Vec<String>,
 ) -> io::Result<()> {
     writeln!(f, "define_tag! {{")?;
     writeln!(
@@ -50,6 +65,9 @@ pub(super) fn write_define_tag<W: Write, R: SchemaWriteRule>(
         let value_type = override_type
             .val_type
             .unwrap_or_else(|| attr.get_value_type(R::MAX_ENUM));
+        if let Some(enum_name) = value_type.get_enum_name() {
+            items.push(enum_name.clone());
+        }
         value_type.write(f, "        ")?;
         writeln!(f, ",")?;
     }
@@ -60,7 +78,7 @@ pub(super) fn write_define_tag<W: Write, R: SchemaWriteRule>(
 
 // define_unique_children マクロで親と子要素の紐づけ定義
 pub(super) fn write_define_unique_children<W: Write>(
-    f: &mut BufWriter<W>,
+    f: &mut W,
     name: &str,
     children: &[(SchemaChild, Option<&'static str>)],
 ) -> io::Result<()> {
@@ -87,7 +105,7 @@ pub(super) fn write_define_unique_children<W: Write>(
 
 // define_lists マクロでリストの定義
 pub(super) fn write_define_lists<W: Write>(
-    f: &mut BufWriter<W>,
+    f: &mut W,
     name: &str,
     children: &[SchemaChild],
 ) -> io::Result<()> {

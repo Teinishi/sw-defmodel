@@ -75,6 +75,18 @@ pub(super) enum ValueType {
     },
 }
 
+impl ValueType {
+    pub(super) fn get_enum_name(&self) -> Option<&String> {
+        match self {
+            Self::Primitive(_) => None,
+            Self::EnumU32 { name, .. }
+            | Self::EnumU64 { name, .. }
+            | Self::EnumI32 { name, .. }
+            | Self::EnumString { name, .. } => Some(name),
+        }
+    }
+}
+
 impl WriteWithIndent for ValueType {
     fn write<W: io::Write>(&self, f: &mut W, indent: &str) -> io::Result<()> {
         match self {
