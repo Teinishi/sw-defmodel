@@ -1,19 +1,19 @@
-use std::collections::BTreeMap;
+use std::{cmp::Ordering, collections::HashMap, hash::Hash};
 
 #[derive(Debug)]
 struct OrderGraph<T> {
-    edges: BTreeMap<T, BTreeMap<T, usize>>,
+    edges: HashMap<T, HashMap<T, usize>>,
 }
 
 impl<T> Default for OrderGraph<T> {
     fn default() -> Self {
         Self {
-            edges: BTreeMap::new(),
+            edges: HashMap::new(),
         }
     }
 }
 
-impl<T: Ord + Clone> OrderGraph<T> {
+impl<T: Hash + Eq + Clone> OrderGraph<T> {
     fn add_edge(&mut self, a: T, b: T, weight: usize) {
         *self.edges.entry(a).or_default().entry(b).or_insert(0) += weight;
     }
@@ -34,10 +34,10 @@ impl<T: Ord + Clone> OrderGraph<T> {
 
     fn topo_sort<F>(&self, mut cmp: F) -> Vec<T>
     where
-        F: FnMut(&[T], &T, &T) -> std::cmp::Ordering,
+        F: FnMut(&[T], &T, &T) -> Ordering,
     {
-        let mut indegree = BTreeMap::new(); // 入次数 (重みではない)
-        let mut scores = BTreeMap::new(); // 出る辺の重み合計 - 入る辺の重み合計
+        let mut indegree = HashMap::new(); // 入次数 (重みではない)
+        let mut scores = HashMap::new(); // 出る辺の重み合計 - 入る辺の重み合計
         for (from, weights) in &self.edges {
             indegree.entry(from).or_insert(0);
             for (to, weight) in weights {
@@ -117,7 +117,7 @@ impl<T: Ord + Clone> OrderGraph<T> {
 fn pop_best_with_cmp<'a, T, F>(values: &'a mut Vec<&T>, mut cmp: F) -> Option<&'a T>
 where
     T: Clone,
-    F: FnMut(&T, &T) -> std::cmp::Ordering,
+    F: FnMut(&T, &T) -> Ordering,
 {
     if values.is_empty() {
         return None;
@@ -125,7 +125,7 @@ where
 
     let mut best_idx = 0;
     for i in 1..values.len() {
-        if cmp(values[i], values[best_idx]) == std::cmp::Ordering::Less {
+        if cmp(values[i], values[best_idx]) == Ordering::Less {
             best_idx = i;
         }
     }
@@ -134,13 +134,13 @@ where
 
 #[derive(Debug, Default)]
 pub struct OrderedMap<K, V> {
-    map: BTreeMap<K, V>,
+    map: HashMap<K, V>,
     order: OrderGraph<K>,
     sequence: Vec<K>,
 }
 
 #[allow(dead_code)]
-impl<K: Ord + Clone, V> OrderedMap<K, V> {
+impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
     pub(super) fn len(&self) -> usize {
         self.map.len()
     }
@@ -198,7 +198,7 @@ impl<K: Ord + Clone, V> OrderedMap<K, V> {
     }
 }
 
-impl<K: AsRef<str> + Clone + Ord, V> OrderedMap<K, V> {
+impl<K: AsRef<str> + Ord + Hash + Eq + Clone, V> OrderedMap<K, V> {
     pub(super) fn get_keys(&self) -> Vec<K> {
         self.order.topo_sort(prefix_priority)
     }
@@ -212,11 +212,7 @@ impl<K: AsRef<str> + Clone + Ord, V> OrderedMap<K, V> {
     }
 }
 
-fn prefix_priority<K: AsRef<str> + std::cmp::Ord>(
-    result: &[K],
-    a: &K,
-    b: &K,
-) -> std::cmp::Ordering {
+fn prefix_priority<K: AsRef<str> + Ord>(result: &[K], a: &K, b: &K) -> Ordering {
     let pa = result
         .last()
         .map(|prev| common_prefix_len(prev.as_ref(), a.as_ref()))
@@ -343,7 +339,7 @@ mod test {
         m.end_sequence();
 
         assert_eq!(
-            m.order.topo_sort(|_r, a, b| std::cmp::Ord::cmp(a, b)),
+            m.order.topo_sort(|_r, a, b| Ord::cmp(a, b)),
             vec!["one", "two", "three", "four", "three_0", "three_1", "five"]
         );
 
