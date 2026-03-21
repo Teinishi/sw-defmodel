@@ -1,7 +1,7 @@
 use super::ordered_map::OrderedMap;
 use quick_xml::{Reader, events::Event};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     io::BufRead,
     path::Path,
 };
@@ -37,7 +37,7 @@ pub(super) fn infer_type(s: &str) -> ValueType {
 
 #[derive(Debug, Default)]
 pub(super) struct AttributeInfo {
-    types: HashSet<ValueType>,
+    types: BTreeSet<ValueType>,
 }
 
 impl AttributeInfo {
@@ -47,6 +47,18 @@ impl AttributeInfo {
 
     fn merge(&mut self, other: Self) {
         self.types.extend(other.types);
+    }
+
+    pub(super) fn type_str(&self) -> &'static str {
+        match self.types.last() {
+            Some(ValueType::Bool) => "bool",
+            Some(ValueType::U32) => "u32",
+            Some(ValueType::U64) => "u64",
+            Some(ValueType::I32) => "i32",
+            Some(ValueType::F32) => "f32",
+            Some(ValueType::String) => "String",
+            None => "()",
+        }
     }
 }
 
@@ -174,6 +186,7 @@ pub(super) fn analyze_files<P: AsRef<Path>>(paths: impl Iterator<Item = P>) -> N
     result
 }
 
+#[allow(dead_code)]
 pub(super) fn print_node(node: &NodeInfo, indent: usize) {
     let pad = " ".repeat(indent);
 

@@ -141,6 +141,14 @@ pub struct OrderedMap<K, V> {
 
 #[allow(dead_code)]
 impl<K: Ord + Clone, V> OrderedMap<K, V> {
+    pub(super) fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub(super) fn get(&self, key: &K) -> Option<&V> {
         self.map.get(key)
     }

@@ -1,7 +1,9 @@
+mod code;
 mod node_info;
 mod ordered_map;
 mod utils;
 
+use code::write_node_code;
 use std::{io, path::Path};
 use utils::ls_xml;
 
@@ -33,7 +35,12 @@ fn main() -> io::Result<()> {
     // test_data/vanilla_definitions 以下を解析
     let files: Vec<_> = ls_xml(test_data_path.join("vanilla_definitions"))?.collect();
     let definition = node_info::analyze_files(files[..].iter());
-    node_info::print_node(&definition, 0);
+    //node_info::print_node(&definition, 0);
+    write_node_code(
+        &mut std::io::stdout(),
+        &definition,
+        "component definition files",
+    )?;
 
     Ok(())
 }
