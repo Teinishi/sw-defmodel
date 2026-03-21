@@ -71,11 +71,10 @@ pub(super) struct NodeInfo {
 }
 
 impl NodeInfo {
-    pub(super) fn merge(&mut self, other: Self) -> bool {
+    pub(super) fn merge(&mut self, other: Self) {
         self.attributes
             .merge_with(other.attributes, |a, b| a.merge(b));
         self.children.merge_with(other.children, |a, b| a.merge(b));
-        self.attributes.is_sortable()
     }
 }
 

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 
 #[derive(Debug)]
 struct OrderGraph<T> {
@@ -32,7 +32,10 @@ impl<T: Ord + Clone> OrderGraph<T> {
         }
     }
 
-    fn topo_sort(&self) -> Vec<T> {
+    fn topo_sort<F>(&self, mut cmp: F) -> Vec<T>
+    where
+        F: FnMut(&[T], &T, &T) -> std::cmp::Ordering,
+    {
         let mut indegree = BTreeMap::new(); // 入次数 (重みではない)
         let mut scores = BTreeMap::new(); // 出る辺の重み合計 - 入る辺の重み合計
         for (from, weights) in &self.edges {
@@ -45,14 +48,14 @@ impl<T: Ord + Clone> OrderGraph<T> {
         }
 
         // 改変 Kahn 法
-        let mut result = Vec::new();
-        let mut queue = VecDeque::new();
+        let mut result: Vec<T> = Vec::new();
+        let mut queue: Vec<&T> = Vec::new();
 
         while !indegree.is_empty() {
             let mut any_indegree_zero = false;
             for (node, deg) in &indegree {
                 if *deg == 0 {
-                    queue.push_back(*node);
+                    queue.push(*node);
                     any_indegree_zero = true;
                 }
             }
@@ -75,7 +78,18 @@ impl<T: Ord + Clone> OrderGraph<T> {
                 queue.extend(max_score.unwrap().1);
             }
 
-            while let Some(node) = queue.pop_front() {
+            loop {
+                let q_top = if queue.len() >= 2 {
+                    // 一意性を確保するためにキューから優先度つきで取り出し
+                    pop_best_with_cmp(&mut queue, |a, b| cmp(&result, a, b))
+                } else {
+                    queue.pop()
+                };
+                if q_top.is_none() {
+                    break;
+                }
+                let node = q_top.unwrap();
+
                 result.push(node.clone());
                 indegree.remove(node);
                 scores.remove(node);
@@ -84,6 +98,9 @@ impl<T: Ord + Clone> OrderGraph<T> {
                     for (next, weight) in weights {
                         if let Some(deg) = indegree.get_mut(next) {
                             *deg -= 1;
+                            if *deg == 0 {
+                                queue.push(next);
+                            }
                         }
                         if let Some(score) = scores.get_mut(next) {
                             *score += *weight as i32;
@@ -95,6 +112,24 @@ impl<T: Ord + Clone> OrderGraph<T> {
 
         result
     }
+}
+
+fn pop_best_with_cmp<'a, T, F>(values: &'a mut Vec<&T>, mut cmp: F) -> Option<&'a T>
+where
+    T: Clone,
+    F: FnMut(&T, &T) -> std::cmp::Ordering,
+{
+    if values.is_empty() {
+        return None;
+    }
+
+    let mut best_idx = 0;
+    for i in 1..values.len() {
+        if cmp(values[i], values[best_idx]) == std::cmp::Ordering::Less {
+            best_idx = i;
+        }
+    }
+    Some(values.swap_remove(best_idx))
 }
 
 #[derive(Debug, Default)]
@@ -153,9 +188,11 @@ impl<K: Ord + Clone, V> OrderedMap<K, V> {
 
         self.order.merge_with(other.order);
     }
+}
 
+impl<K: AsRef<str> + Clone + Ord, V> OrderedMap<K, V> {
     pub(super) fn get_keys(&self) -> Vec<K> {
-        self.order.topo_sort()
+        self.order.topo_sort(prefix_priority)
     }
 
     pub(super) fn get_items(&self) -> Vec<(&K, &V)> {
@@ -165,11 +202,28 @@ impl<K: Ord + Clone, V> OrderedMap<K, V> {
             .filter_map(|k| self.map.get_key_value(k))
             .collect()
     }
+}
 
-    // TODO: 消す
-    pub(super) fn is_sortable(&self) -> bool {
-        true
-    }
+fn prefix_priority<K: AsRef<str> + std::cmp::Ord>(
+    result: &[K],
+    a: &K,
+    b: &K,
+) -> std::cmp::Ordering {
+    let pa = result
+        .last()
+        .map(|prev| common_prefix_len(prev.as_ref(), a.as_ref()))
+        .unwrap_or(0);
+
+    let pb = result
+        .last()
+        .map(|prev| common_prefix_len(prev.as_ref(), b.as_ref()))
+        .unwrap_or(0);
+
+    pb.cmp(&pa).then_with(|| a.cmp(b))
+}
+
+fn common_prefix_len(a: &str, b: &str) -> usize {
+    a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count()
 }
 
 #[cfg(test)]
@@ -235,7 +289,7 @@ mod test {
     }
 
     #[test]
-    fn order_priority() {
+    fn order_frequency() {
         let mut m = OrderedMap::default();
 
         for _ in 0..2 {
@@ -256,10 +310,38 @@ mod test {
             m.end_sequence();
         }
 
-        println!("{:?}", m.order.edges);
-
-        m.order.topo_sort();
+        m.order.topo_sort(prefix_priority);
 
         assert_eq!(m.get_keys(), vec!["one", "two", "three", "four"]);
+    }
+
+    #[test]
+    fn order_priority() {
+        let mut m = OrderedMap::default();
+
+        m.begin_sequence();
+        m.insert("three", ());
+        m.insert("three_0", ());
+        m.insert("three_1", ());
+        m.insert("five", ());
+        m.end_sequence();
+
+        m.begin_sequence();
+        m.insert("one", ());
+        m.insert("two", ());
+        m.insert("three", ());
+        m.insert("four", ());
+        m.insert("five", ());
+        m.end_sequence();
+
+        assert_eq!(
+            m.order.topo_sort(|_r, a, b| std::cmp::Ord::cmp(a, b)),
+            vec!["one", "two", "three", "four", "three_0", "three_1", "five"]
+        );
+
+        assert_eq!(
+            m.get_keys(),
+            vec!["one", "two", "three", "three_0", "three_1", "four", "five"]
+        );
     }
 }
