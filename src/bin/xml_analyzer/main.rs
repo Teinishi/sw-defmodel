@@ -1,10 +1,13 @@
 mod code;
+mod code_rule;
 mod node_info;
 mod ordered_map;
 mod utils;
 
-use code::write_node_code;
-use std::{io, path::Path};
+use code::write_code;
+use code_rule::{ChildClassificcation, CodeRule};
+use node_info::{ChildInfo, ValueType};
+use std::{borrow::Cow, io, path::Path};
 use utils::ls_xml;
 
 /*const DEFINE_VEC3I: &str = r#"
@@ -34,14 +37,72 @@ fn main() -> io::Result<()> {
 
     // test_data/vanilla_definitions 以下を解析
     let definition = node_info::analyze_files(ls_xml(test_data_path.join("vanilla_definitions"))?);
-    //node_info::print_node(&definition, 0);
-    write_node_code(
-        &mut std::io::stdout(),
-        &definition,
-        "component definition files",
-    )?;
+    write_code(&mut std::io::stdout(), &definition, &mut DefinitionRule)?;
 
     Ok(())
+}
+
+// <definition> 用の上書きルール
+#[derive(Default, Debug)]
+struct DefinitionRule;
+
+impl CodeRule for DefinitionRule {
+    const TARGET_LABEL: &str = "component definition files";
+
+    fn override_child(&mut self, name: &str, info: &ChildInfo) -> Option<ChildClassificcation> {
+        match name {
+            "particle_offset" | "particle_bounds" => {
+                return Some(ChildClassificcation::unique());
+            }
+            _ => {}
+        }
+
+        let attrs = &info.inner().attributes;
+        let n = attrs.len();
+        if (1..=3).contains(&n)
+            && attrs
+                .iter()
+                .all(|(name, _)| matches!(name.as_str(), "x" | "y" | "z"))
+        {
+            if attrs
+                .iter()
+                .all(|(_, a)| matches!(a.types.last(), Some(ValueType::F32)))
+            {
+                return Some(ChildClassificcation::unique_inline("Vec3f"));
+            } else if attrs
+                .iter()
+                .all(|(_, a)| matches!(a.types.last(), Some(ValueType::I32 | ValueType::U32)))
+            {
+                return Some(ChildClassificcation::unique_inline("Vec3i"));
+            }
+        }
+
+        None
+    }
+
+    fn override_child_type(&mut self, _name: &str, info: &ChildInfo) -> Option<Cow<'static, str>> {
+        let attrs = &info.inner().attributes;
+        let n = attrs.len();
+        if (1..=3).contains(&n)
+            && attrs
+                .iter()
+                .all(|(name, _)| matches!(name.as_str(), "x" | "y" | "z"))
+        {
+            if attrs
+                .iter()
+                .all(|(_, a)| matches!(a.types.last(), Some(ValueType::F32)))
+            {
+                return Some("Vec3f".into());
+            } else if attrs
+                .iter()
+                .all(|(_, a)| matches!(a.types.last(), Some(ValueType::I32 | ValueType::U32)))
+            {
+                return Some("Vec3i".into());
+            }
+        }
+
+        None
+    }
 }
 
 /*// <definition> 用のスキーマの上書きルール

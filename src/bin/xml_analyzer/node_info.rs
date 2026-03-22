@@ -37,7 +37,7 @@ pub(super) fn infer_type(s: &str) -> ValueType {
 
 #[derive(Debug, Default)]
 pub(super) struct AttributeInfo {
-    types: BTreeSet<ValueType>,
+    pub(super) types: BTreeSet<ValueType>,
 }
 
 impl AttributeInfo {
