@@ -1,10 +1,11 @@
 use super::{
-    code_rule::{ChildClassificcation, CodeRule, TypeDefinition},
+    code_rule::{ChildClassificcation, CodeRule, NamePath, TypeDefinition},
     node_info::NodeInfo,
 };
 use heck::{ToSnakeCase as _, ToUpperCamelCase as _};
 use std::{collections::BTreeMap, io, ops::Index};
 
+// Rust で識別子に使用できないキーワードのリスト
 const RUST_KEYWORDS: [&str; 50] = [
     "as", "async", "await", "break", "const", "continue", "crate", "else", "enum", "extern",
     "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
@@ -13,11 +14,14 @@ const RUST_KEYWORDS: [&str; 50] = [
     "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
 ];
 
-fn to_snake_ident(val: &str, suffix: &str) -> String {
+// XML属性名等を Rust の識別子にする
+fn to_snake_ident(val: &str, fix: &str) -> String {
     let mut v = val.to_snake_case();
+    if v.starts_with(|c: char| c.is_ascii_digit()) {
+        v = format!("{fix}_{v}");
+    }
     if RUST_KEYWORDS.contains(&v.as_str()) {
-        v.push_str(suffix);
-        v = v.to_snake_case();
+        v = format!("{v}_{fix}");
     }
     v
 }
@@ -32,8 +36,7 @@ pub(super) fn write_code<W: io::Write, R: CodeRule>(
     create_node_definitions(
         &mut nodes,
         &mut reg,
-        &NamePath::default(),
-        &node.name,
+        NamePath::new(node.name.clone()),
         node,
         rule,
     );
@@ -42,7 +45,10 @@ pub(super) fn write_code<W: io::Write, R: CodeRule>(
 
     for node_def in nodes.values() {
         node_def.write_code(f, R::TARGET_LABEL, &names)?;
+        writeln!(f)?;
     }
+
+    rule.finalize(f)?;
 
     Ok(())
 }
@@ -63,35 +69,19 @@ impl NameRegistory {
             .iter()
             .enumerate()
             .map(|(idx, name_path)| {
-                let len = name_path.path.len();
+                let len = name_path.len();
                 'size: for size in 1..len {
-                    let s = &name_path.path[len - size..];
-                    if size < len {
-                        for (i, other) in self.names.iter().enumerate() {
-                            if i != idx && &other.path[other.path.len().saturating_sub(size)..] == s
-                            {
-                                continue 'size;
-                            }
+                    let s = name_path.tail(size);
+                    for (i, other) in self.names.iter().enumerate() {
+                        if i != idx && other.tail(size) == s {
+                            continue 'size;
                         }
                     }
                     return s.join(" ").to_upper_camel_case();
                 }
-                name_path.path.join(" ").to_upper_camel_case()
+                name_path.join_str(" ").to_upper_camel_case()
             })
             .collect()
-    }
-}
-
-#[derive(Clone, Default, Debug)]
-struct NamePath {
-    path: Vec<String>,
-}
-
-impl NamePath {
-    fn clone_push(&self, value: String) -> Self {
-        let mut s = self.clone();
-        s.path.push(value);
-        s
     }
 }
 
@@ -131,7 +121,8 @@ impl NodeDefinition {
             }
             write!(f, ": {},\n    ", type_str(&attr.ty, names))?;
         }
-        writeln!(f, "}}\n}}\\n")?;
+        writeln!(f, "}}")?;
+        writeln!(f, "}}")?;
 
         // 通常の子要素
         if !self.children.is_empty() {
@@ -150,10 +141,13 @@ impl NodeDefinition {
         if !self.lists.is_empty() {
             writeln!(f, "define_lists!({struct_name} {{")?;
             for list in &self.lists {
+                write!(f, "    <{}>", list.list_xml_name)?;
+                if list.list_xml_name != list.list_name {
+                    write!(f, " => {}", list.list_name)?;
+                }
                 writeln!(
                     f,
-                    "    <{}>: [<{}>: {}],",
-                    list.list_xml_name,
+                    ": [<{}>: {}],",
                     list.item_xml_name,
                     type_str(&list.item_ty, names)
                 )?;
@@ -197,12 +191,10 @@ struct ListDefinition {
 fn create_node_definitions<R: CodeRule>(
     nodes: &mut BTreeMap<usize, NodeDefinition>,
     reg: &mut NameRegistory,
-    parent_path: &NamePath,
-    name: &str,
+    path: NamePath,
     node: &NodeInfo,
     rule: &mut R,
 ) -> usize {
-    let path = parent_path.clone_push(name.to_owned());
     let name_id = reg.register_name(path.clone());
 
     let attributes = node
@@ -210,7 +202,7 @@ fn create_node_definitions<R: CodeRule>(
         .get_items()
         .into_iter()
         .map(|(attr_name, attr_info)| {
-            let name = to_snake_ident(attr_name, "_attr");
+            let name = to_snake_ident(attr_name, "attr");
             AttributeDefinition {
                 xml_name: attr_name.clone(),
                 name,
@@ -222,7 +214,8 @@ fn create_node_definitions<R: CodeRule>(
     let mut children = Vec::new();
     let mut lists = Vec::new();
     for (c_name, child_info) in node.children.get_items() {
-        let cls = rule.override_child(c_name, child_info).unwrap_or_else(|| {
+        let c_path = path.join(c_name.to_owned());
+        let cls = rule.override_child(&c_path, child_info).unwrap_or_else(|| {
             let c = child_info.inner();
             if c.attributes.is_empty()
                 && c.children.iter().count() == 1
@@ -232,38 +225,35 @@ fn create_node_definitions<R: CodeRule>(
             } else if !child_info.is_multiple() {
                 ChildClassificcation::unique()
             } else {
-                panic!("Unexpected element: {c_name}");
+                panic!("Unexpected element: {c_path}");
             }
         });
 
         match cls {
             ChildClassificcation::Unique { name, ty } => children.push(ChildDefinition {
                 xml_name: c_name.clone(),
-                name: name.unwrap_or_else(|| to_snake_ident(c_name, "_el")),
+                name: name.unwrap_or_else(|| to_snake_ident(c_name, "el")),
                 ty: ty.unwrap_or_else(|| {
                     TypeDefinition::Registered(create_node_definitions(
                         nodes,
                         reg,
-                        &path,
-                        c_name,
+                        c_path,
                         child_info.inner(),
                         rule,
                     ))
                 }),
             }),
             ChildClassificcation::List { list_name, item_ty } => {
-                let list_path = path.clone_push(c_name.to_owned());
                 let (item_xml_name, item_info) = child_info.inner().children.iter().next().unwrap();
                 lists.push(ListDefinition {
                     list_xml_name: c_name.clone(),
-                    list_name: list_name.unwrap_or_else(|| to_snake_ident(c_name, "_list")),
+                    list_name: list_name.unwrap_or_else(|| to_snake_ident(c_name, "list")),
                     item_xml_name: item_xml_name.clone(),
                     item_ty: item_ty.unwrap_or_else(|| {
                         TypeDefinition::Registered(create_node_definitions(
                             nodes,
                             reg,
-                            &list_path,
-                            item_xml_name,
+                            c_path.join(item_xml_name.to_owned()),
                             item_info.inner(),
                             rule,
                         ))
@@ -276,7 +266,7 @@ fn create_node_definitions<R: CodeRule>(
     nodes.insert(
         name_id,
         NodeDefinition {
-            xml_name: name.to_owned(),
+            xml_name: path.name().to_owned(),
             name_id,
             attributes,
             children,

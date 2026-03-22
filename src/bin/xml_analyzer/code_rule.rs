@@ -1,17 +1,65 @@
 use super::node_info::ChildInfo;
-use std::borrow::Cow;
+use std::io;
 
 pub(super) trait CodeRule {
     const TARGET_LABEL: &str;
 
-    #[allow(unused)]
-    fn override_child(&mut self, name: &str, info: &ChildInfo) -> Option<ChildClassificcation> {
+    #[allow(unused_variables)]
+    fn override_child(
+        &mut self,
+        path: &NamePath,
+        info: &ChildInfo,
+    ) -> Option<ChildClassificcation> {
         None
     }
 
-    #[allow(unused)]
-    fn override_child_type(&mut self, name: &str, info: &ChildInfo) -> Option<Cow<'static, str>> {
-        None
+    #[allow(unused_variables)]
+    fn finalize<W: io::Write>(&mut self, f: &mut W) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct NamePath {
+    path: Vec<String>,
+}
+
+impl NamePath {
+    pub(super) fn new(name: String) -> Self {
+        Self { path: vec![name] }
+    }
+
+    pub(super) fn join(&self, value: String) -> Self {
+        let mut s = self.clone();
+        s.path.push(value);
+        s
+    }
+
+    pub(super) fn name(&self) -> &str {
+        self.path.last().unwrap()
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.path.len()
+    }
+
+    #[expect(dead_code)]
+    pub(super) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub(super) fn tail(&self, size: usize) -> &[String] {
+        &self.path[self.len().saturating_sub(size)..]
+    }
+
+    pub(super) fn join_str(&self, sep: &str) -> String {
+        self.path.join(sep)
+    }
+}
+
+impl std::fmt::Display for NamePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.path.join("/"))
     }
 }
 

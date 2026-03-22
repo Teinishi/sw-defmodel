@@ -5,13 +5,16 @@ mod ordered_map;
 mod utils;
 
 use code::write_code;
-use code_rule::{ChildClassificcation, CodeRule};
+use code_rule::{ChildClassificcation, CodeRule, NamePath};
 use node_info::{ChildInfo, ValueType};
-use std::{borrow::Cow, io, path::Path};
+use std::{
+    fs::{self, File},
+    io::{self, BufWriter},
+    path::Path,
+};
 use utils::ls_xml;
 
-/*const DEFINE_VEC3I: &str = r#"
-define_tag! {
+const DEFINE_VEC3I: &str = r#"define_tag! {
     #[doc = "Represents an element with integer attributes `x`, `y`, and `z`."]
     struct Vec3i {
         "x": i32,
@@ -19,10 +22,10 @@ define_tag! {
         "z": i32,
     }
 }
+
 "#;
 
-const DEFINE_VEC3F: &str = r#"
-define_tag! {
+const DEFINE_VEC3F: &str = r#"define_tag! {
     #[doc = "Represents an element with float attributes `x`, `y`, and `z`."]
     struct Vec3f {
         "x": f32,
@@ -30,27 +33,41 @@ define_tag! {
         "z": f32,
     }
 }
-"#;*/
+
+"#;
 
 fn main() -> io::Result<()> {
     let test_data_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data");
+    let output_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tmp");
 
     // test_data/vanilla_definitions 以下を解析
     let definition = node_info::analyze_files(ls_xml(test_data_path.join("vanilla_definitions"))?);
-    write_code(&mut std::io::stdout(), &definition, &mut DefinitionRule)?;
+    fs::create_dir_all(&output_path)?;
+    let mut f = BufWriter::new(File::create(output_path.join("component_definition.rs"))?);
+    write_code(&mut f, &definition, &mut DefinitionRule::default())?;
 
     Ok(())
 }
 
 // <definition> 用の上書きルール
 #[derive(Default, Debug)]
-struct DefinitionRule;
+struct DefinitionRule {
+    vec3i: bool,
+    vec3f: bool,
+}
 
 impl CodeRule for DefinitionRule {
     const TARGET_LABEL: &str = "component definition files";
 
-    fn override_child(&mut self, name: &str, info: &ChildInfo) -> Option<ChildClassificcation> {
-        match name {
+    fn override_child(
+        &mut self,
+        path: &NamePath,
+        info: &ChildInfo,
+    ) -> Option<ChildClassificcation> {
+        match path.name() {
+            "jet_engine_connections_prev" => {
+                return Some(ChildClassificcation::list());
+            }
             "particle_offset" | "particle_bounds" => {
                 return Some(ChildClassificcation::unique());
             }
@@ -68,11 +85,13 @@ impl CodeRule for DefinitionRule {
                 .iter()
                 .all(|(_, a)| matches!(a.types.last(), Some(ValueType::F32)))
             {
+                self.vec3i = true;
                 return Some(ChildClassificcation::unique_inline("Vec3f"));
             } else if attrs
                 .iter()
                 .all(|(_, a)| matches!(a.types.last(), Some(ValueType::I32 | ValueType::U32)))
             {
+                self.vec3f = true;
                 return Some(ChildClassificcation::unique_inline("Vec3i"));
             }
         }
@@ -80,135 +99,14 @@ impl CodeRule for DefinitionRule {
         None
     }
 
-    fn override_child_type(&mut self, _name: &str, info: &ChildInfo) -> Option<Cow<'static, str>> {
-        let attrs = &info.inner().attributes;
-        let n = attrs.len();
-        if (1..=3).contains(&n)
-            && attrs
-                .iter()
-                .all(|(name, _)| matches!(name.as_str(), "x" | "y" | "z"))
-        {
-            if attrs
-                .iter()
-                .all(|(_, a)| matches!(a.types.last(), Some(ValueType::F32)))
-            {
-                return Some("Vec3f".into());
-            } else if attrs
-                .iter()
-                .all(|(_, a)| matches!(a.types.last(), Some(ValueType::I32 | ValueType::U32)))
-            {
-                return Some("Vec3i".into());
-            }
+    fn finalize<W: io::Write>(&mut self, f: &mut W) -> io::Result<()> {
+        if self.vec3i {
+            write!(f, "{}", DEFINE_VEC3I)?;
         }
-
-        None
-    }
-}
-
-/*// <definition> 用のスキーマの上書きルール
-#[derive(Default, Debug)]
-struct DefinitionTagRule {
-    vec3i: bool,
-    vec3f: bool,
-}
-
-impl SchemaWriteRule for DefinitionTagRule {
-    const MAX_ENUM: usize = 10; // 属性値の自動判定で enum にするしきい値
-    const TARGET_LABEL: &str = "component definition files";
-
-    fn before_define_attribute(
-        &mut self,
-        tag_name: &str,
-        attribute: &SchemaAttribute,
-    ) -> OverrideAttribute {
-        match (tag_name, attribute.get_key().as_ref()) {
-            ("definition", "button_type") => OverrideAttribute::enum_u32(
-                Some(
-                    "A subtype for buttons where the [type attribute][Definition::type_attr()] has a value of 8.",
-                ),
-                "ButtonType",
-                &[
-                    ("Push", 0),
-                    ("Toggle", 1),
-                    ("Key", 2),
-                    ("Lockable", 3),
-                    ("ThrottleLever", 4),
-                    ("SmallKeypad", 5),
-                    ("LargeKeypad", 6),
-                ],
-            ),
-            ("definition", "light_type") => {
-                OverrideAttribute::enum_u32(None, "LightType", &[("Normal", 0), ("Spotlight", 1)])
-            }
-            ("surface", "orientation") => OverrideAttribute::enum_u32(
-                None,
-                "Orientation",
-                &[
-                    ("XPos", 0),
-                    ("XNeg", 1),
-                    ("YPos", 2),
-                    ("YNeg", 3),
-                    ("ZPos", 4),
-                    ("ZNeg", 5),
-                ],
-            ),
-            ("surface", "rotation") => OverrideAttribute::enum_u32(
-                None,
-                "Rotation",
-                &[("_0", 0), ("_1", 1), ("_2", 2), ("_3", 3)],
-            ),
-            ("surface", "shape") | ("surface", "flags") => {
-                OverrideAttribute::primitive(None, PrimitiveType::U32)
-            }
-            ("surface", "trans_type") => {
-                OverrideAttribute::enum_u32(None, "TransType", &[("_0", 0), ("_1", 1), ("_2", 2)])
-            }
-            // TODO: 他
-            _ => OverrideAttribute::default(),
-        }
-    }
-
-    fn before_scan_child(
-        &mut self,
-        _tag_name: &str,
-        child: &SchemaChild,
-    ) -> Option<ChildElementType> {
-        // x, y, z 属性だけを持ち、整数または浮動小数点数の値は入っているものは Vec3i, Vec3f で定義
-        let attrs = &child.schema.attributes;
-        if attrs.len() <= 3
-            && attrs
-                .iter()
-                .all(|a| matches!(a.key.as_ref(), "x" | "y" | "z"))
-            && child.schema.children.is_empty()
-        {
-            if attrs.iter().all(|a| parse_ok_all::<i32>(&a.values)) {
-                self.vec3i = true;
-                return Some(ChildElementType::NamedUnique("Vec3i"));
-            } else if attrs.iter().all(|a| parse_ok_all::<f32>(&a.values)) {
-                self.vec3f = true;
-                return Some(ChildElementType::NamedUnique("Vec3f"));
-            }
-        }
-        None
-    }
-
-    fn finalize<W: Write>(
-        &mut self,
-        f: &mut W,
-        tag_name: &str,
-        items: &mut Vec<String>,
-    ) -> io::Result<()> {
-        if tag_name == "definition" {
-            if self.vec3i {
-                write!(f, "{}", DEFINE_VEC3I)?;
-                items.push("Vec3i".to_owned());
-            }
-            if self.vec3f {
-                write!(f, "{}", DEFINE_VEC3F)?;
-                items.push("Vec3f".to_owned());
-            }
+        if self.vec3f {
+            write!(f, "{}", DEFINE_VEC3F)?;
         }
 
         Ok(())
     }
-}*/
+}

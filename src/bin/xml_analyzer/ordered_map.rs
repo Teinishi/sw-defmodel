@@ -1,14 +1,21 @@
-use std::{cmp::Ordering, collections::HashMap, hash::Hash};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
+};
 
 #[derive(Debug)]
 struct OrderGraph<T> {
     edges: HashMap<T, HashMap<T, usize>>,
+    nodes: HashSet<T>,
 }
 
 impl<T> Default for OrderGraph<T> {
     fn default() -> Self {
         Self {
             edges: HashMap::new(),
+            nodes: HashSet::new(),
         }
     }
 }
@@ -22,6 +29,9 @@ impl<T: Hash + Eq + Clone> OrderGraph<T> {
         for window in seq.windows(2) {
             self.add_edge(window[0].clone(), window[1].clone(), 1);
         }
+        for node in seq {
+            self.nodes.insert(node.clone());
+        }
     }
 
     fn merge_with(&mut self, other: Self) {
@@ -30,14 +40,15 @@ impl<T: Hash + Eq + Clone> OrderGraph<T> {
                 self.add_edge(a.clone(), b, weight);
             }
         }
+        self.nodes.extend(other.nodes);
     }
 
     fn topo_sort<F>(&self, mut cmp: F) -> Vec<T>
     where
         F: FnMut(&[T], &T, &T) -> Ordering,
     {
-        let mut indegree = HashMap::new(); // 入次数 (重みではない)
-        let mut scores = HashMap::new(); // 出る辺の重み合計 - 入る辺の重み合計
+        let mut indegree: HashMap<&T, usize> = self.nodes.iter().map(|k| (k, 0)).collect(); // 入次数 (重みではない)
+        let mut scores: HashMap<&T, i32> = self.nodes.iter().map(|k| (k, 0)).collect(); // 出る辺の重み合計 - 入る辺の重み合計
         for (from, weights) in &self.edges {
             indegree.entry(from).or_insert(0);
             for (to, weight) in weights {
@@ -132,7 +143,7 @@ where
     Some(values.swap_remove(best_idx))
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct OrderedMap<K, V> {
     map: HashMap<K, V>,
     order: OrderGraph<K>,
@@ -206,17 +217,34 @@ impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
     }
 }
 
-impl<K: AsRef<str> + Ord + Hash + Eq + Clone, V> OrderedMap<K, V> {
+impl<K: AsRef<str> + Ord + Hash + Eq + Clone + Debug, V: Debug> OrderedMap<K, V> {
     pub(super) fn get_keys(&self) -> Vec<K> {
-        self.order.topo_sort(prefix_priority)
+        let k = self.order.topo_sort(prefix_priority);
+        debug_assert_eq!(self.map.len(), k.len());
+        k
     }
 
     pub(super) fn get_items(&self) -> Vec<(&K, &V)> {
         let order = self.get_keys();
         order
             .iter()
-            .filter_map(|k| self.map.get_key_value(k))
+            .map(|k| self.map.get_key_value(k).unwrap())
             .collect()
+    }
+}
+
+impl<K: AsRef<str> + Ord + Hash + Eq + Clone + Debug, V: Debug> Debug for OrderedMap<K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+        let mut is_first = true;
+        for (k, v) in self.get_items() {
+            if !is_first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{k:?}: {v:?}")?;
+            is_first = false;
+        }
+        write!(f, "}}")
     }
 }
 
@@ -241,6 +269,17 @@ fn common_prefix_len(a: &str, b: &str) -> usize {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn single() {
+        let mut m = OrderedMap::default();
+
+        m.begin_sequence();
+        m.insert("one", ());
+        m.end_sequence();
+
+        assert_eq!(m.get_keys(), vec!["one"]);
+    }
 
     #[test]
     fn basic_order() {

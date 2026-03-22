@@ -365,6 +365,12 @@ macro_rules! define_tag {
         }
     };
 
+    // 終了条件 (属性なし)
+    (
+        @loop []
+        $name:ident {}
+    ) => {};
+
     // 終了条件
     (
         @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
@@ -379,7 +385,7 @@ macro_rules! define_tag {
                 "# use sw_defmodel::domtree::Element;\n",
                 "assert_eq!(\n",
                 "    ", stringify!($name), "::<&Element>::ATTRIBUTES,\n",
-                "    [", $(stringify!($acc_name), ", "),*, "]\n",
+                "    [", $(stringify!($acc_name), ", ", )* "]\n",
                 ");\n",
                 "```",
             )]
