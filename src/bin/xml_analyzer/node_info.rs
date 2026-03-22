@@ -69,6 +69,14 @@ pub(super) struct ChildInfo {
 }
 
 impl ChildInfo {
+    pub(super) fn is_multiple(&self) -> bool {
+        self.multiple
+    }
+
+    pub(super) fn inner(&self) -> &NodeInfo {
+        &self.node
+    }
+
     pub(super) fn merge(&mut self, other: Self) {
         self.multiple |= other.multiple;
         self.node.merge(*other.node);
@@ -139,20 +147,14 @@ pub(super) fn analyze_reader<R: BufRead>(reader: &mut Reader<R>) -> NodeInfo {
                 let child_counts = child_count_stack.pop().unwrap();
 
                 node.children.end_sequence();
+                for (c_name, c) in node.children.iter_mut() {
+                    c.multiple = *child_counts.get(c_name).unwrap() > 1;
+                }
 
                 if let Some(parent) = stack.last_mut() {
                     let entry = parent
                         .children
                         .entry_or_insert_with(node.name.clone(), ChildInfo::default);
-
-                    // 出現回数から multiple 判定
-                    if child_counts
-                        .get(&node.name)
-                        .map(|&c| c > 1)
-                        .unwrap_or(false)
-                    {
-                        entry.multiple = true;
-                    }
 
                     entry.node.merge(node);
                 } else {

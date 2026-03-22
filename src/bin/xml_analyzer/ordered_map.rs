@@ -141,6 +141,14 @@ pub struct OrderedMap<K, V> {
 
 #[allow(dead_code)]
 impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
+    pub(super) fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.map.iter()
+    }
+
+    pub(super) fn iter_mut(&mut self) -> impl Iterator<Item = (&K, &mut V)> {
+        self.map.iter_mut()
+    }
+
     pub(super) fn len(&self) -> usize {
         self.map.len()
     }

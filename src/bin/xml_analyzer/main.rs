@@ -33,8 +33,7 @@ fn main() -> io::Result<()> {
     let test_data_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data");
 
     // test_data/vanilla_definitions 以下を解析
-    let files: Vec<_> = ls_xml(test_data_path.join("vanilla_definitions"))?.collect();
-    let definition = node_info::analyze_files(files[..].iter());
+    let definition = node_info::analyze_files(ls_xml(test_data_path.join("vanilla_definitions"))?);
     //node_info::print_node(&definition, 0);
     write_node_code(
         &mut std::io::stdout(),
