@@ -6,7 +6,7 @@ mod utils;
 
 use code::write_code;
 use code_rule::{ChildClassificcation, CodeRule, NamePath};
-use node_info::{ChildInfo, ValueType};
+use node_info::{ChildInfo, ValueType, analyze_files};
 use std::{
     fs::{self, File},
     io::{self, BufWriter},
@@ -37,15 +37,42 @@ const DEFINE_VEC3F: &str = r#"define_tag! {
 "#;
 
 fn main() -> io::Result<()> {
-    let test_data_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data");
-    let output_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tmp");
-
     // test_data/vanilla_definitions 以下を解析
-    let definition = node_info::analyze_files(ls_xml(test_data_path.join("vanilla_definitions"))?);
-    fs::create_dir_all(&output_path)?;
-    let mut f = BufWriter::new(File::create(output_path.join("component_definition.rs"))?);
-    write_code(&mut f, &definition, &mut DefinitionRule::default())?;
+    analyze_and_write(
+        "vanilla_definitions",
+        "definition",
+        DefinitionRule::default(),
+    )?;
 
+    // test_data/vehicles 以下を解析
+    analyze_and_write("vehicles", "vehicle", VehicleRule)?;
+
+    Ok(())
+}
+
+fn analyze_and_write<R: CodeRule>(
+    test_data_subdir: &str,
+    module_name: &str,
+    mut rule: R,
+) -> io::Result<()> {
+    let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let xml_path = manifest_path.join("test_data").join(test_data_subdir);
+
+    println!("Analyzing files in {xml_path:?}");
+
+    let info = analyze_files(ls_xml(xml_path)?);
+
+    let output_path = manifest_path
+        .join("tmp")
+        .join(module_name)
+        .with_extension("rs");
+    println!("Writing to {output_path:?}");
+
+    fs::create_dir_all(output_path.parent().unwrap())?;
+    let mut f = BufWriter::new(File::create(output_path)?);
+    write_code(&mut f, &info, &mut rule)?;
+
+    println!("Done");
     Ok(())
 }
 
@@ -106,4 +133,12 @@ impl CodeRule for DefinitionRule {
 
         Ok(())
     }
+}
+
+// <vehicle> 用の上書きルール
+#[derive(Default, Debug)]
+struct VehicleRule;
+
+impl CodeRule for VehicleRule {
+    const TARGET_LABEL: &str = "vehicle files";
 }

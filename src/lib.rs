@@ -2,16 +2,16 @@
 #[macro_use]
 pub(crate) mod macros;
 
-pub mod component_definition;
+pub mod definition;
 pub mod domtree;
 pub mod helpers;
 pub(crate) mod utils;
 
-pub use component_definition::*;
+pub use definition::{DefinitionDocument};
 
 #[cfg(test)]
 mod tests {
-    use crate::component_definition::{Definition, DefinitionDocument};
+    use crate::definition::{Definition, DefinitionDocument};
     use crate::domtree::Element;
     use std::path::Path;
 
