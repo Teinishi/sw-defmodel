@@ -1,12 +1,13 @@
 use super::ordered_map::OrderedMap;
 use quick_xml::{Reader, events::Event};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashMap},
-    io::BufRead,
+    io::{self, BufRead},
     path::Path,
 };
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub(super) enum ValueType {
     Bool,
     U32,
@@ -48,7 +49,7 @@ pub(super) fn infer_type(s: &str) -> ValueType {
     ValueType::String
 }
 
-#[derive(Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default)]
 pub(super) struct AttributeInfo {
     types: BTreeSet<ValueType>,
 }
@@ -67,15 +68,15 @@ impl AttributeInfo {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default)]
 pub(super) struct ChildInfo {
-    multiple: bool,
+    max_count: usize,
     node: Box<NodeInfo>,
 }
 
 impl ChildInfo {
     pub(super) fn is_multiple(&self) -> bool {
-        self.multiple
+        self.max_count > 1
     }
 
     pub(super) fn inner(&self) -> &NodeInfo {
@@ -83,12 +84,12 @@ impl ChildInfo {
     }
 
     pub(super) fn merge(&mut self, other: Self) {
-        self.multiple |= other.multiple;
+        self.max_count = self.max_count.max(other.max_count);
         self.node.merge(*other.node);
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default)]
 pub(super) struct NodeInfo {
     pub(super) name: String,
     pub(super) attributes: OrderedMap<String, AttributeInfo>,
@@ -97,6 +98,14 @@ pub(super) struct NodeInfo {
 
 impl NodeInfo {
     pub(super) fn merge(&mut self, other: Self) {
+        if self.name.is_empty() {
+            self.name = other.name;
+        } else if self.name != other.name {
+            panic!(
+                "Unable to merge NodeInfo: {:?} and {:?}",
+                self.name, other.name
+            );
+        }
         self.attributes
             .merge_with(other.attributes, |a, b| a.merge(b));
         self.children.merge_with(other.children, |a, b| a.merge(b));
@@ -153,7 +162,7 @@ pub(super) fn analyze_reader<R: BufRead>(reader: &mut Reader<R>) -> NodeInfo {
 
                 node.children.end_sequence();
                 for (c_name, c) in node.children.iter_mut() {
-                    c.multiple = *child_counts.get(c_name).unwrap() > 1;
+                    c.max_count = *child_counts.get(c_name).unwrap();
                 }
 
                 if let Some(parent) = stack.last_mut() {
@@ -178,35 +187,42 @@ pub(super) fn analyze_reader<R: BufRead>(reader: &mut Reader<R>) -> NodeInfo {
     root.unwrap()
 }
 
-pub(super) fn analyze_files<P: AsRef<Path>>(paths: impl Iterator<Item = P>) -> NodeInfo {
-    let mut result = NodeInfo::default();
+pub(super) fn analyze_files<P: AsRef<Path> + Sync>(paths: &[P]) -> NodeInfo {
+    use rayon::prelude::*;
 
-    for path in paths {
-        let node = analyze_reader(&mut Reader::from_file(path).unwrap());
-        if result.name.is_empty() {
-            result = node;
-        } else {
-            result.merge(node);
-        }
-    }
-
-    result
+    paths
+        .par_iter()
+        .map(|path| analyze_reader(&mut Reader::from_file(path).unwrap()))
+        .reduce(NodeInfo::default, |mut a: NodeInfo, b: NodeInfo| {
+            a.merge(b);
+            a
+        })
 }
 
 #[allow(dead_code)]
-pub(super) fn print_node(node: &NodeInfo, indent: usize) {
+pub(super) fn print_node<W: io::Write>(
+    f: &mut W,
+    node: &NodeInfo,
+    indent: usize,
+) -> io::Result<()> {
     let pad = " ".repeat(indent);
 
-    println!("{}Element: {}", pad, node.name);
+    writeln!(f, "{}", node.name)?;
 
     for (k, v) in node.attributes.get_items() {
-        println!("{}  Attr: {} -> {:?}", pad, k, v.types);
+        writeln!(f, "{}  Attr: {} -> {:?}", pad, k, v.types)?;
     }
 
-    for (k, v) in node.children.get_items() {
-        println!("{}  Child: {} (multiple: {})", pad, k, v.multiple);
-        print_node(&v.node, indent + 4);
+    for (_, v) in node.children.get_items() {
+        write!(f, "{}  Child", pad)?;
+        if v.is_multiple() {
+            write!(f, " (max: {})", v.max_count)?;
+        }
+        write!(f, ": ")?;
+        print_node(f, &v.node, indent + 2)?;
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

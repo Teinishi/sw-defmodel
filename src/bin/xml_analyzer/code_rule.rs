@@ -29,6 +29,11 @@ impl NamePath {
         Self { path: vec![name] }
     }
 
+    #[expect(dead_code)]
+    pub(super) fn as_slice(&self) -> &[String] {
+        &self.path
+    }
+
     pub(super) fn join(&self, value: String) -> Self {
         let mut s = self.clone();
         s.path.push(value);

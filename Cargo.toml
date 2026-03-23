@@ -6,12 +6,15 @@ description = "A Rust library for reading and manipulating Stormworks data files
 license = "MIT"
 
 [features]
-tool = ["heck"]
+tool = ["heck", "rayon", "serde", "ron"]
 
 [dependencies]
-heck = { version = "0.5.0", optional = true }
-paste = "1.0.15"
 quick-xml = "0.39.2"
+paste = "1.0.15"
+heck = { version = "0.5.0", optional = true }
+rayon = { version = "1.11.0", optional = true }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
+ron = { version = "0.12.0", optional = true }
 
 [[bin]]
 name = "xml_analyzer"

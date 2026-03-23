@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -5,13 +6,13 @@ use std::{
     hash::Hash,
 };
 
-#[derive(Debug)]
-struct OrderGraph<T> {
+#[derive(Deserialize, Serialize, Debug)]
+struct OrderGraph<T: Eq + Hash> {
     edges: HashMap<T, HashMap<T, usize>>,
     nodes: HashSet<T>,
 }
 
-impl<T> Default for OrderGraph<T> {
+impl<T: Eq + Hash> Default for OrderGraph<T> {
     fn default() -> Self {
         Self {
             edges: HashMap::new(),
@@ -143,10 +144,11 @@ where
     Some(values.swap_remove(best_idx))
 }
 
-#[derive(Default)]
-pub struct OrderedMap<K, V> {
+#[derive(Deserialize, Serialize, Default)]
+pub struct OrderedMap<K: Eq + Hash, V> {
     map: HashMap<K, V>,
     order: OrderGraph<K>,
+    #[serde(skip)]
     sequence: Vec<K>,
 }
 

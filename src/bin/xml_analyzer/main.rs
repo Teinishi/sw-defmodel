@@ -6,13 +6,15 @@ mod utils;
 
 use code::write_code;
 use code_rule::{ChildClassificcation, CodeRule, NamePath};
-use node_info::{ChildInfo, ValueType, analyze_files};
+use node_info::{ChildInfo, ValueType, analyze_files, print_node};
 use std::{
     fs::{self, File},
-    io::{self, BufWriter},
+    io::{self, BufReader, BufWriter, Write},
     path::Path,
 };
 use utils::ls_xml;
+
+use crate::node_info::NodeInfo;
 
 const DEFINE_VEC3I: &str = r#"define_tag! {
     #[doc = "Represents an element with integer attributes `x`, `y`, and `z`."]
@@ -56,23 +58,41 @@ fn analyze_and_write<R: CodeRule>(
     mut rule: R,
 ) -> io::Result<()> {
     let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let xml_path = manifest_path.join("test_data").join(test_data_subdir);
 
-    println!("Analyzing files in {xml_path:?}");
+    let output_path = manifest_path.join("tmp").join(module_name);
+    let cache_path = output_path.with_extension("ron");
 
-    let info = analyze_files(ls_xml(xml_path)?);
+    let node: NodeInfo = if cache_path.is_file() {
+        // キャッシュがあれば XML を読まずに続行
+        println!("Loading XML structure data from cache file: {cache_path:?}");
+        ron::de::from_reader(BufReader::new(File::open(cache_path)?)).expect("Failed to load cache")
+    } else {
+        // キャッシュがなければ test_data から解析
+        let xml_path = manifest_path.join("test_data").join(test_data_subdir);
+        println!("Analyzing files in {xml_path:?}");
+        let node = analyze_files(&ls_xml(xml_path)?.collect::<Vec<_>>());
 
-    let output_path = manifest_path
-        .join("tmp")
-        .join(module_name)
-        .with_extension("rs");
-    println!("Writing to {output_path:?}");
+        // キャッシュに保存
+        let cache_str =
+            ron::ser::to_string_pretty(&node, ron::ser::PrettyConfig::new().compact_arrays(true))
+                .expect("Failed to serialize");
+        fs::create_dir_all(cache_path.parent().unwrap())?;
+        File::create(cache_path)?.write_all(cache_str.as_bytes())?;
 
+        node
+    };
+
+    // log ファイルに記録
     fs::create_dir_all(output_path.parent().unwrap())?;
-    let mut f = BufWriter::new(File::create(output_path)?);
-    write_code(&mut f, &info, &mut rule)?;
+    let mut f = BufWriter::new(File::create(output_path.with_extension("log"))?);
+    print_node(&mut f, &node, 0)?;
 
-    println!("Done");
+    // Rust コードを出力
+    let output_path = output_path.with_extension("rs");
+    println!("Writing to {output_path:?}");
+    let mut f = BufWriter::new(File::create(output_path)?);
+    write_code(&mut f, &node, &mut rule)?;
+
     Ok(())
 }
 
@@ -141,4 +161,23 @@ struct VehicleRule;
 
 impl CodeRule for VehicleRule {
     const TARGET_LABEL: &str = "vehicle files";
+
+    fn override_child(
+        &mut self,
+        path: &NamePath,
+        _info: &ChildInfo,
+    ) -> Option<ChildClassificcation> {
+        match path.join_str("/").as_str() {
+            "vehicle/bodies/body/components/c/o/microprocessor_definition/group/components/c/object/out1" => {
+                Some(ChildClassificcation::unique())
+            }
+            "vehicle/bodies/body/components/c/o/display_1/col_extra/c"
+            | "vehicle/bodies/body/components/c/o/display_2/col_extra/c"
+            | "vehicle/bodies/body/components/c/o/display_3/col_extra/c"
+            | "vehicle/bodies/body/components/c/o/display_4/col_extra/c" => {
+                Some(ChildClassificcation::list())
+            }
+            _ => None,
+        }
+    }
 }

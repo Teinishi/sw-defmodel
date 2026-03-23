@@ -56,7 +56,7 @@ pub(super) fn write_code<W: io::Write, R: CodeRule>(
             if remove_ids.contains(j) {
                 continue;
             }
-            if a.struct_eq(b) {
+            if a.struct_eq(b, &nodes).unwrap() {
                 merge_ids.entry(*i).or_default().insert(*j);
                 remove_ids.insert(*j);
             }
@@ -228,32 +228,39 @@ fn hashset_eq<T: Eq + Hash>(a: &[T], b: &[T]) -> bool {
     a.len() == b.len() && a.iter().collect::<HashSet<_>>() == b.iter().collect::<HashSet<_>>()
 }
 
-fn sort_eq<T: StructEq, F>(a: &[T], b: &[T], mut compare: F) -> bool
+fn sort_eq<T: StructEq, F>(
+    a: &[T],
+    b: &[T],
+    mut compare: F,
+    nodes: &BTreeMap<usize, NodeDefinition>,
+) -> Option<bool>
 where
     F: FnMut(&T, &T) -> std::cmp::Ordering,
 {
     if a.len() != b.len() {
-        return false;
+        return Some(false);
     }
     let mut ra: Vec<&T> = a.iter().collect();
     let mut rb: Vec<&T> = b.iter().collect();
     ra.sort_by(|va, vb| compare(*va, *vb));
     rb.sort_by(|va, vb| compare(*va, *vb));
-    ra.iter().zip(rb.iter()).all(|(va, vb)| va.struct_eq(vb))
+    ra.iter().zip(rb.iter()).try_fold(true, |acc, (va, vb)| {
+        va.struct_eq(vb, nodes).map(|e| acc && e)
+    })
 }
 
 trait StructEq {
-    fn struct_eq(&self, other: &Self) -> bool;
+    fn struct_eq(&self, other: &Self, nodes: &BTreeMap<usize, NodeDefinition>) -> Option<bool>;
 }
 
 impl StructEq for TypeDefinition {
-    fn struct_eq(&self, other: &Self) -> bool {
+    fn struct_eq(&self, other: &Self, nodes: &BTreeMap<usize, NodeDefinition>) -> Option<bool> {
         match (self, other) {
-            (Self::Inline(a), Self::Inline(b)) => a == b,
-            (Self::Registered(_a), Self::Registered(_b)) => {
-                todo!()
+            (Self::Inline(a), Self::Inline(b)) => Some(a == b),
+            (Self::Registered(a), Self::Registered(b)) => {
+                nodes.get(a)?.struct_eq(nodes.get(b)?, nodes)
             }
-            _ => false,
+            _ => Some(false),
         }
     }
 }
@@ -333,21 +340,29 @@ impl NodeDefinition {
 }
 
 impl StructEq for NodeDefinition {
-    fn struct_eq(&self, other: &Self) -> bool {
+    fn struct_eq(&self, other: &Self, nodes: &BTreeMap<usize, NodeDefinition>) -> Option<bool> {
         if self.xml_name != other.xml_name
             || self.attributes.len() != other.attributes.len()
             || self.children.len() != other.children.len()
             || self.lists.len() != other.lists.len()
         {
-            return false;
+            return Some(false);
         }
-        hashset_eq(&self.attributes, &other.attributes)
-            && sort_eq(&self.children, &other.children, |a, b| {
-                a.xml_name.cmp(&b.xml_name)
-            })
-            && sort_eq(&self.lists, &other.lists, |a, b| {
-                a.item_xml_name.cmp(&b.list_xml_name)
-            })
+        Some(
+            hashset_eq(&self.attributes, &other.attributes)
+                && sort_eq(
+                    &self.children,
+                    &other.children,
+                    |a, b| a.xml_name.cmp(&b.xml_name),
+                    nodes,
+                )?
+                && sort_eq(
+                    &self.lists,
+                    &other.lists,
+                    |a, b| a.item_xml_name.cmp(&b.list_xml_name),
+                    nodes,
+                )?,
+        )
     }
 }
 
@@ -366,8 +381,12 @@ struct ChildDefinition {
 }
 
 impl StructEq for ChildDefinition {
-    fn struct_eq(&self, other: &Self) -> bool {
-        self.xml_name == other.xml_name && self.name == other.name && self.ty.struct_eq(&other.ty)
+    fn struct_eq(&self, other: &Self, nodes: &BTreeMap<usize, NodeDefinition>) -> Option<bool> {
+        Some(
+            self.xml_name == other.xml_name
+                && self.name == other.name
+                && self.ty.struct_eq(&other.ty, nodes)?,
+        )
     }
 }
 
@@ -380,10 +399,12 @@ struct ListDefinition {
 }
 
 impl StructEq for ListDefinition {
-    fn struct_eq(&self, other: &Self) -> bool {
-        self.list_xml_name == other.list_xml_name
-            && self.list_name == other.list_name
-            && self.item_xml_name == other.item_xml_name
-            && self.item_ty.struct_eq(&other.item_ty)
+    fn struct_eq(&self, other: &Self, nodes: &BTreeMap<usize, NodeDefinition>) -> Option<bool> {
+        Some(
+            self.list_xml_name == other.list_xml_name
+                && self.list_name == other.list_name
+                && self.item_xml_name == other.item_xml_name
+                && self.item_ty.struct_eq(&other.item_ty, nodes)?,
+        )
     }
 }
