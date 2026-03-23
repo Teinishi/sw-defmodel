@@ -217,7 +217,7 @@ impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
     }
 }
 
-impl<K: AsRef<str> + Ord + Hash + Eq + Clone + Debug, V: Debug> OrderedMap<K, V> {
+impl<K: AsRef<str> + Ord + Hash + Eq + Clone, V> OrderedMap<K, V> {
     pub(super) fn get_keys(&self) -> Vec<K> {
         let k = self.order.topo_sort(prefix_priority);
         debug_assert_eq!(self.map.len(), k.len());

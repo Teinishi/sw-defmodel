@@ -1,9 +1,13 @@
 use super::{
     code_rule::{ChildClassificcation, CodeRule, NamePath, TypeDefinition},
-    node_info::NodeInfo,
+    node_info::{NodeInfo, ValueType},
 };
 use heck::{ToSnakeCase as _, ToUpperCamelCase as _};
-use std::{collections::BTreeMap, io, ops::Index};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    hash::Hash,
+    io,
+};
 
 // Rust で識別子に使用できないキーワードのリスト
 const RUST_KEYWORDS: [&str; 50] = [
@@ -41,7 +45,35 @@ pub(super) fn write_code<W: io::Write, R: CodeRule>(
         rule,
     );
 
-    let names = reg.finalize();
+    // nodes から重複を取り除く
+    let mut merge_ids: HashMap<usize, HashSet<usize>> = HashMap::new();
+    let mut remove_ids = HashSet::new();
+    for (i, a) in &nodes {
+        if remove_ids.contains(i) {
+            continue;
+        }
+        for (j, b) in nodes.range(i + 1..) {
+            if remove_ids.contains(j) {
+                continue;
+            }
+            if a.struct_eq(b) {
+                merge_ids.entry(*i).or_default().insert(*j);
+                remove_ids.insert(*j);
+            }
+        }
+    }
+    for i in remove_ids {
+        nodes.remove(&i);
+        reg.name_paths.remove(&i);
+    }
+
+    // 消した name を復活させる
+    let mut names = reg.finalize();
+    for (i, s) in merge_ids {
+        for j in s {
+            names.insert(j, names.get(&i).unwrap().clone());
+        }
+    }
 
     for node_def in nodes.values() {
         node_def.write_code(f, R::TARGET_LABEL, &names)?;
@@ -51,141 +83,6 @@ pub(super) fn write_code<W: io::Write, R: CodeRule>(
     rule.finalize(f)?;
 
     Ok(())
-}
-
-#[derive(Default, Debug)]
-struct NameRegistory {
-    names: Vec<NamePath>,
-}
-
-impl NameRegistory {
-    fn register_name(&mut self, path: NamePath) -> usize {
-        self.names.push(path);
-        self.names.len() - 1
-    }
-
-    fn finalize(&self) -> Vec<String> {
-        self.names
-            .iter()
-            .enumerate()
-            .map(|(idx, name_path)| {
-                let len = name_path.len();
-                'size: for size in 1..len {
-                    let s = name_path.tail(size);
-                    for (i, other) in self.names.iter().enumerate() {
-                        if i != idx && other.tail(size) == s {
-                            continue 'size;
-                        }
-                    }
-                    return s.join(" ").to_upper_camel_case();
-                }
-                name_path.join_str(" ").to_upper_camel_case()
-            })
-            .collect()
-    }
-}
-
-#[derive(Debug)]
-struct NodeDefinition {
-    xml_name: String,
-    name_id: usize,
-    attributes: Vec<AttributeDefinition>,
-    children: Vec<ChildDefinition>,
-    lists: Vec<ListDefinition>,
-}
-
-impl NodeDefinition {
-    fn write_code<W: io::Write>(
-        &self,
-        f: &mut W,
-        target_label: &str,
-        names: &[String],
-    ) -> io::Result<()> {
-        let struct_name = names.index(self.name_id);
-
-        // 属性定義
-        writeln!(f, "define_tag! {{")?;
-        writeln!(
-            f,
-            "    #[doc = \"Represents `<{}>` tag in {target_label}.\"]",
-            self.xml_name,
-        )?;
-        write!(f, "    struct {struct_name} {{")?;
-        if !self.attributes.is_empty() {
-            write!(f, "\n    ")?;
-        }
-        for attr in &self.attributes {
-            write!(f, "    {:?}", attr.xml_name)?;
-            if attr.xml_name != attr.name {
-                write!(f, " => {}", attr.name)?;
-            }
-            write!(f, ": {},\n    ", type_str(&attr.ty, names))?;
-        }
-        writeln!(f, "}}")?;
-        writeln!(f, "}}")?;
-
-        // 通常の子要素
-        if !self.children.is_empty() {
-            writeln!(f, "define_unique_children!({struct_name} {{")?;
-            for child in &self.children {
-                write!(f, "    <{}>", child.xml_name)?;
-                if child.xml_name != child.name {
-                    write!(f, "=> {}", child.name)?;
-                }
-                writeln!(f, ": {},", type_str(&child.ty, names))?;
-            }
-            writeln!(f, "}});")?;
-        }
-
-        // リスト
-        if !self.lists.is_empty() {
-            writeln!(f, "define_lists!({struct_name} {{")?;
-            for list in &self.lists {
-                write!(f, "    <{}>", list.list_xml_name)?;
-                if list.list_xml_name != list.list_name {
-                    write!(f, " => {}", list.list_name)?;
-                }
-                writeln!(
-                    f,
-                    ": [<{}>: {}],",
-                    list.item_xml_name,
-                    type_str(&list.item_ty, names)
-                )?;
-            }
-            writeln!(f, "}});")?;
-        }
-
-        Ok(())
-    }
-}
-
-fn type_str<'a>(ty: &TypeDefinition, names: &'a [String]) -> &'a str {
-    match ty {
-        TypeDefinition::Inline(s) => s,
-        TypeDefinition::Registered(idx) => names.index(*idx),
-    }
-}
-
-#[derive(Debug)]
-struct AttributeDefinition {
-    xml_name: String,
-    name: String,
-    ty: TypeDefinition,
-}
-
-#[derive(Debug)]
-struct ChildDefinition {
-    xml_name: String,
-    name: String,
-    ty: TypeDefinition,
-}
-
-#[derive(Debug)]
-struct ListDefinition {
-    list_xml_name: String,
-    list_name: String,
-    item_xml_name: String,
-    item_ty: TypeDefinition,
 }
 
 fn create_node_definitions<R: CodeRule>(
@@ -206,7 +103,7 @@ fn create_node_definitions<R: CodeRule>(
             AttributeDefinition {
                 xml_name: attr_name.clone(),
                 name,
-                ty: TypeDefinition::Inline(attr_info.type_str()),
+                ty: *attr_info.ty(),
             }
         })
         .collect();
@@ -275,4 +172,207 @@ fn create_node_definitions<R: CodeRule>(
     );
 
     name_id
+}
+
+fn type_str<'a>(ty: &TypeDefinition, names: &'a BTreeMap<usize, String>) -> &'a str {
+    match ty {
+        TypeDefinition::Inline(s) => s,
+        TypeDefinition::Registered(idx) => names.get(idx).unwrap(),
+    }
+}
+
+#[derive(Default, Debug)]
+struct NameRegistory {
+    name_paths: BTreeMap<usize, NamePath>,
+}
+
+impl NameRegistory {
+    fn register_name(&mut self, path: NamePath) -> usize {
+        let id = self.name_paths.len();
+        self.name_paths.insert(id, path);
+        id
+    }
+
+    fn finalize(&self) -> BTreeMap<usize, String> {
+        self.name_paths
+            .iter()
+            .map(|(id, name_path)| {
+                let len = name_path.len();
+                'size: for size in 1..len {
+                    let s = name_path.tail(size);
+                    for (i, other) in self.name_paths.iter() {
+                        if i != id && other.tail(size) == s {
+                            continue 'size;
+                        }
+                    }
+                    return (*id, s.join(" ").to_upper_camel_case());
+                }
+                (*id, name_path.join_str(" ").to_upper_camel_case())
+            })
+            .collect()
+    }
+}
+
+fn hashset_eq<T: Eq + Hash>(a: &[T], b: &[T]) -> bool {
+    a.len() == b.len() && a.iter().collect::<HashSet<_>>() == b.iter().collect::<HashSet<_>>()
+}
+
+fn sort_eq<T: StructEq, F>(a: &[T], b: &[T], mut compare: F) -> bool
+where
+    F: FnMut(&T, &T) -> std::cmp::Ordering,
+{
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut ra: Vec<&T> = a.iter().collect();
+    let mut rb: Vec<&T> = b.iter().collect();
+    ra.sort_by(|va, vb| compare(*va, *vb));
+    rb.sort_by(|va, vb| compare(*va, *vb));
+    ra.iter().zip(rb.iter()).all(|(va, vb)| va.struct_eq(vb))
+}
+
+trait StructEq {
+    fn struct_eq(&self, other: &Self) -> bool;
+}
+
+impl StructEq for TypeDefinition {
+    fn struct_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Inline(a), Self::Inline(b)) => a == b,
+            (Self::Registered(_a), Self::Registered(_b)) => {
+                todo!()
+            }
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct NodeDefinition {
+    xml_name: String,
+    name_id: usize,
+    attributes: Vec<AttributeDefinition>,
+    children: Vec<ChildDefinition>,
+    lists: Vec<ListDefinition>,
+}
+
+impl NodeDefinition {
+    fn write_code<W: io::Write>(
+        &self,
+        f: &mut W,
+        target_label: &str,
+        names: &BTreeMap<usize, String>,
+    ) -> io::Result<()> {
+        let struct_name = names.get(&self.name_id).unwrap();
+
+        // 属性定義
+        writeln!(f, "define_tag! {{")?;
+        writeln!(
+            f,
+            "    #[doc = \"Represents `<{}>` tag in {target_label}.\"]",
+            self.xml_name,
+        )?;
+        write!(f, "    struct {struct_name} {{")?;
+        if !self.attributes.is_empty() {
+            write!(f, "\n    ")?;
+        }
+        for attr in &self.attributes {
+            write!(f, "    {:?}", attr.xml_name)?;
+            if attr.xml_name != attr.name {
+                write!(f, " => {}", attr.name)?;
+            }
+            write!(f, ": {},\n    ", attr.ty.as_str())?;
+        }
+        writeln!(f, "}}")?;
+        writeln!(f, "}}")?;
+
+        // 通常の子要素
+        if !self.children.is_empty() {
+            writeln!(f, "define_unique_children!({struct_name} {{")?;
+            for child in &self.children {
+                write!(f, "    <{}>", child.xml_name)?;
+                if child.xml_name != child.name {
+                    write!(f, "=> {}", child.name)?;
+                }
+                writeln!(f, ": {},", type_str(&child.ty, names))?;
+            }
+            writeln!(f, "}});")?;
+        }
+
+        // リスト
+        if !self.lists.is_empty() {
+            writeln!(f, "define_lists!({struct_name} {{")?;
+            for list in &self.lists {
+                write!(f, "    <{}>", list.list_xml_name)?;
+                if list.list_xml_name != list.list_name {
+                    write!(f, " => {}", list.list_name)?;
+                }
+                writeln!(
+                    f,
+                    ": [<{}>: {}],",
+                    list.item_xml_name,
+                    type_str(&list.item_ty, names)
+                )?;
+            }
+            writeln!(f, "}});")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl StructEq for NodeDefinition {
+    fn struct_eq(&self, other: &Self) -> bool {
+        if self.xml_name != other.xml_name
+            || self.attributes.len() != other.attributes.len()
+            || self.children.len() != other.children.len()
+            || self.lists.len() != other.lists.len()
+        {
+            return false;
+        }
+        hashset_eq(&self.attributes, &other.attributes)
+            && sort_eq(&self.children, &other.children, |a, b| {
+                a.xml_name.cmp(&b.xml_name)
+            })
+            && sort_eq(&self.lists, &other.lists, |a, b| {
+                a.item_xml_name.cmp(&b.list_xml_name)
+            })
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+struct AttributeDefinition {
+    xml_name: String,
+    name: String,
+    ty: ValueType,
+}
+
+#[derive(Debug)]
+struct ChildDefinition {
+    xml_name: String,
+    name: String,
+    ty: TypeDefinition,
+}
+
+impl StructEq for ChildDefinition {
+    fn struct_eq(&self, other: &Self) -> bool {
+        self.xml_name == other.xml_name && self.name == other.name && self.ty.struct_eq(&other.ty)
+    }
+}
+
+#[derive(Debug)]
+struct ListDefinition {
+    list_xml_name: String,
+    list_name: String,
+    item_xml_name: String,
+    item_ty: TypeDefinition,
+}
+
+impl StructEq for ListDefinition {
+    fn struct_eq(&self, other: &Self) -> bool {
+        self.list_xml_name == other.list_xml_name
+            && self.list_name == other.list_name
+            && self.item_xml_name == other.item_xml_name
+            && self.item_ty.struct_eq(&other.item_ty)
+    }
 }

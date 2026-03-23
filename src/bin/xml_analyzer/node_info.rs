@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub(super) enum ValueType {
     Bool,
     U32,
@@ -14,6 +14,19 @@ pub(super) enum ValueType {
     I32,
     F32,
     String,
+}
+
+impl ValueType {
+    pub(super) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Bool => "bool",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::I32 => "i32",
+            Self::F32 => "f32",
+            Self::String => "String",
+        }
+    }
 }
 
 pub(super) fn infer_type(s: &str) -> ValueType {
@@ -37,7 +50,7 @@ pub(super) fn infer_type(s: &str) -> ValueType {
 
 #[derive(Debug, Default)]
 pub(super) struct AttributeInfo {
-    pub(super) types: BTreeSet<ValueType>,
+    types: BTreeSet<ValueType>,
 }
 
 impl AttributeInfo {
@@ -49,16 +62,8 @@ impl AttributeInfo {
         self.types.extend(other.types);
     }
 
-    pub(super) fn type_str(&self) -> &'static str {
-        match self.types.last() {
-            Some(ValueType::Bool) => "bool",
-            Some(ValueType::U32) => "u32",
-            Some(ValueType::U64) => "u64",
-            Some(ValueType::I32) => "i32",
-            Some(ValueType::F32) => "f32",
-            Some(ValueType::String) => "String",
-            None => "()",
-        }
+    pub(super) fn ty(&self) -> &ValueType {
+        self.types.last().unwrap()
     }
 }
 

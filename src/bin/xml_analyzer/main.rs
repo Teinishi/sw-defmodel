@@ -81,15 +81,12 @@ impl CodeRule for DefinitionRule {
                 .iter()
                 .all(|(name, _)| matches!(name.as_str(), "x" | "y" | "z"))
         {
-            if attrs
-                .iter()
-                .all(|(_, a)| matches!(a.types.last(), Some(ValueType::F32)))
-            {
+            if attrs.iter().all(|(_, a)| matches!(a.ty(), ValueType::F32)) {
                 self.vec3i = true;
                 return Some(ChildClassificcation::unique_inline("Vec3f"));
             } else if attrs
                 .iter()
-                .all(|(_, a)| matches!(a.types.last(), Some(ValueType::I32 | ValueType::U32)))
+                .all(|(_, a)| matches!(a.ty(), ValueType::I32 | ValueType::U32))
             {
                 self.vec3f = true;
                 return Some(ChildClassificcation::unique_inline("Vec3i"));
