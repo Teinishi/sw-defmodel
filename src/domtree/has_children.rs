@@ -8,7 +8,7 @@ pub trait HasChildren {
         self.children().get(index)
     }
 
-    fn elements(&self) -> impl Iterator<Item = (&Element, usize)> {
+    fn elements(&self) -> impl DoubleEndedIterator<Item = (&Element, usize)> {
         self.children().iter().enumerate().filter_map(|(i, node)| {
             if let Node::Element(el) = &node {
                 Some((el, i))
@@ -18,13 +18,18 @@ pub trait HasChildren {
         })
     }
 
-    fn elements_by_name<K: AsRef<[u8]>>(&self, name: K) -> impl Iterator<Item = (&Element, usize)> {
+    fn elements_by_name<K: AsRef<[u8]>>(
+        &self,
+        name: K,
+    ) -> impl DoubleEndedIterator<Item = (&Element, usize)> {
         self.elements()
             .filter(move |(el, _)| el.name == name.as_ref())
     }
 
     fn single_element_by_name<K: AsRef<[u8]>>(&self, name: K) -> Option<(&Element, usize)> {
-        self.elements().find(|(el, _)| el.name == name.as_ref())
+        self.elements()
+            .rev()
+            .find(|(el, _)| el.name == name.as_ref())
     }
 }
 
@@ -43,7 +48,7 @@ pub trait HasChildrenMut: HasChildren {
         self.children_mut().insert(index, node);
     }
 
-    fn elements_mut(&mut self) -> impl Iterator<Item = (&mut Element, usize)> {
+    fn elements_mut(&mut self) -> impl DoubleEndedIterator<Item = (&mut Element, usize)> {
         self.children_mut()
             .iter_mut()
             .enumerate()
@@ -59,7 +64,7 @@ pub trait HasChildrenMut: HasChildren {
     fn elements_by_name_mut<K: AsRef<[u8]>>(
         &mut self,
         name: K,
-    ) -> impl Iterator<Item = (&mut Element, usize)> {
+    ) -> impl DoubleEndedIterator<Item = (&mut Element, usize)> {
         self.elements_mut()
             .filter(move |(el, _)| el.name == name.as_ref())
     }
@@ -68,7 +73,9 @@ pub trait HasChildrenMut: HasChildren {
         &mut self,
         name: K,
     ) -> Option<(&mut Element, usize)> {
-        self.elements_mut().find(|(el, _)| el.name == name.as_ref())
+        self.elements_mut()
+            .rev()
+            .find(|(el, _)| el.name == name.as_ref())
     }
 
     fn remove_element(&mut self, index: usize) -> Node {

@@ -19,17 +19,15 @@ impl<E, T> List<E, T> {
 }
 
 impl<E: HasChildren, T> List<E, T> {
-    pub fn len(&self) -> usize
-    {
+    pub fn len(&self) -> usize {
         self.element.elements_by_name(self.item_name).count()
     }
 
-    pub fn is_empty(&self) -> bool
-    {
+    pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = T>
+    pub fn iter<'a>(&'a self) -> impl DoubleEndedIterator<Item = T>
     where
         T: From<&'a Element>,
     {
@@ -40,7 +38,7 @@ impl<E: HasChildren, T> List<E, T> {
 }
 
 impl<E: HasChildrenMut, T> List<E, T> {
-    pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = T>
+    pub fn iter_mut<'a>(&'a mut self) -> impl DoubleEndedIterator<Item = T>
     where
         T: From<&'a mut Element>,
     {

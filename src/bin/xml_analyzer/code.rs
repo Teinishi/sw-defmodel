@@ -37,7 +37,7 @@ pub(super) fn write_code<W: io::Write, R: CodeRule>(
 ) -> io::Result<()> {
     let mut nodes = BTreeMap::new();
     let mut reg = NameRegistory::default();
-    create_node_definitions(
+    let root_id = create_node_definitions(
         &mut nodes,
         &mut reg,
         NamePath::new(node.name.clone()),
@@ -75,6 +75,17 @@ pub(super) fn write_code<W: io::Write, R: CodeRule>(
         }
     }
 
+    // ドキュメントの定義を書く
+    let root_name = names.get(&root_id).unwrap();
+    writeln!(f, "define_root! {{")?;
+    writeln!(f, "    #[doc = \"Represents {}.\"]", R::TARGET_LABEL)?;
+    writeln!(f, "    struct {}Document {{", root_name)?;
+    writeln!(f, "        <{}> => {}", node.name, root_name)?;
+    writeln!(f, "    }}")?;
+    writeln!(f, "}}")?;
+    writeln!(f)?;
+
+    // 各要素の定義マクロを書く
     for node_def in nodes.values() {
         node_def.write_code(f, R::TARGET_LABEL, &names)?;
         writeln!(f)?;

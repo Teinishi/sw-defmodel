@@ -1,45 +1,3 @@
-macro_rules! get_first_stringify {
-    ($first:tt $($rest:tt)*) => {
-        stringify!($first)
-    };
-}
-
-macro_rules! get_second_stringify {
-    ($first:tt, $second:tt, $($rest:tt)*) => {
-        stringify!($second)
-    };
-    ($first:tt $(,)?) => {
-        stringify!($first)
-    };
-}
-
-macro_rules! get_third_stringify {
-    ($first:tt, $second:tt, $third:tt, $($rest:tt)*) => {
-        stringify!($third)
-    };
-    ($first:tt, $second:tt $(,)?) => {
-        stringify!($first)
-    };
-    ($first:tt $(,)?) => {
-        stringify!($first)
-    };
-}
-
-macro_rules! get_fourth_stringify {
-    ($first:tt, $second:tt, $third:tt, $fourth:tt, $($rest:tt)*) => {
-        stringify!($fourth)
-    };
-    ($first:tt, $second:tt, $third:tt $(,)?) => {
-        stringify!($first)
-    };
-    ($first:tt, $second:tt $(,)?) => {
-        stringify!($second)
-    };
-    ($first:tt $(,)?) => {
-        stringify!($first)
-    };
-}
-
 // Document をラップして便利メソッドを生やす
 macro_rules! define_root {
     (
@@ -56,7 +14,7 @@ macro_rules! define_root {
             tree: $crate::domtree::Document,
         }
 
-        impl ComponentDefinition {
+        impl $name {
             pub fn from_xml_str(s: &str) -> ::core::result::Result<Self, $crate::domtree::ParseError> {
                 Ok(Self {
                     tree: $crate::domtree::Document::from_xml_str(s)?,
@@ -69,7 +27,7 @@ macro_rules! define_root {
                 })
             }
 
-            pub fn from_xml_reader<R: ::std::io::BufRead>(reader: &mut Reader<R>) -> ::core::result::Result<Self, $crate::domtree::ParseError> {
+            pub fn from_xml_reader<R: ::std::io::BufRead>(reader: &mut ::quick_xml::Reader<R>) -> ::core::result::Result<Self, $crate::domtree::ParseError> {
                 Ok(Self {
                     tree: $crate::domtree::Document::from_xml_reader(reader)?,
                 })
@@ -83,21 +41,20 @@ macro_rules! define_root {
                 self.tree.to_bytes()
             }
 
-            pub fn $tag_name(&self) -> ::core::option::Option<$($root_type)*<&$crate::domtree::Element>> {
+            pub fn root(&self) -> ::core::option::Option<$($root_type)*<&$crate::domtree::Element>> {
                 $crate::domtree::HasChildren::single_element_by_name(&self.tree, stringify!($tag_name))
                     .map(|(el, _)| $($root_type)*::new(el))
             }
 
-            ::paste::paste! {
-                pub fn [<$tag_name _mut>](&mut self) -> $($root_type)*<&mut $crate::domtree::Element> {
-                    let (el, _) = $crate::domtree::HasChildrenMut::ensure_element(&mut self.tree, stringify!($tag_name));
-                    $($root_type)*::new(el)
-                }
+            pub fn root_mut(&mut self) -> $($root_type)*<&mut $crate::domtree::Element> {
+                let (el, _) = $crate::domtree::HasChildrenMut::ensure_element(&mut self.tree, stringify!($tag_name));
+                $($root_type)*::new(el)
             }
         }
     };
 }
 
+/*
 // XML属性値を enum として扱えるようにするマクロ
 macro_rules! xml_enum {
     ($(#[$meta:meta])* enum $name:ident &str {
@@ -233,6 +190,7 @@ macro_rules! xml_enum {
         }
     };
 }
+*/
 
 // Element をラップして属性と型の対応付けをした struct を作成
 macro_rules! define_tag {
@@ -244,8 +202,8 @@ macro_rules! define_tag {
             "To get access to attributes or children, typed getter/setters are provided for known ones.\n",
             "\n",
             "Attribute getters:\n",
-            "- Return an enum value for attributes which is considered to be applicable to represent by an enum.\n",
-            "    - Enums for attributes have `Unknown(String)` variant in preparation for future game update.\n",
+            //"- Return an enum value for attributes which is considered to be applicable to represent by an enum.\n",
+            //"    - Enums for attributes have `Unknown(String)` variant in preparation for future game update.\n",
             "- Return `Err(AttrError::NotFound)` if it does not exist in the XML.\n",
             "- Return `Err(Attr::ParseBoolError)`, `Err(Attr::ParseFloatError)` or `Err(Attr::ParseIntError)` if parsing the value failed.\n",
             "\n",
@@ -289,6 +247,7 @@ macro_rules! define_tag {
         define_tag!(@loop [] $name { $($body)* });
     };
 
+    /*
     (
         @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
         $name:ident {
@@ -338,6 +297,7 @@ macro_rules! define_tag {
             $name { $(#[$attr_meta])* $attr_name => $attr_ident : $enum_name $(, $($rest)*)? }
         );
     };
+    */
 
     (
         @loop [$($(#[$acc_meta:meta], )* $acc_name:literal, $acc_ident:ident, $acc_type:ty;)*]
@@ -568,3 +528,47 @@ macro_rules! define_lists {
         }
     };
 }
+
+/*
+macro_rules! get_first_stringify {
+    ($first:tt $($rest:tt)*) => {
+        stringify!($first)
+    };
+}
+
+macro_rules! get_second_stringify {
+    ($first:tt, $second:tt, $($rest:tt)*) => {
+        stringify!($second)
+    };
+    ($first:tt $(,)?) => {
+        stringify!($first)
+    };
+}
+
+macro_rules! get_third_stringify {
+    ($first:tt, $second:tt, $third:tt, $($rest:tt)*) => {
+        stringify!($third)
+    };
+    ($first:tt, $second:tt $(,)?) => {
+        stringify!($first)
+    };
+    ($first:tt $(,)?) => {
+        stringify!($first)
+    };
+}
+
+macro_rules! get_fourth_stringify {
+    ($first:tt, $second:tt, $third:tt, $fourth:tt, $($rest:tt)*) => {
+        stringify!($fourth)
+    };
+    ($first:tt, $second:tt, $third:tt $(,)?) => {
+        stringify!($first)
+    };
+    ($first:tt, $second:tt $(,)?) => {
+        stringify!($second)
+    };
+    ($first:tt $(,)?) => {
+        stringify!($first)
+    };
+}
+*/

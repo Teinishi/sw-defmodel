@@ -28,5 +28,5 @@ Create a `test_data` directory and put test data in it. It is listed in `.gitign
 Run following command, then you get code in `tmp` directory.
 
 ```sh
-cargo run --bin schema_tool --features="tool"
+cargo run --bin xml_analyzer --features="tool"
 ```
