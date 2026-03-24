@@ -2,16 +2,19 @@
 #[macro_use]
 pub(crate) mod macros;
 
-pub mod definition;
+pub mod definition_view;
 pub mod domtree;
+pub mod generic_view;
 pub mod helpers;
 pub(crate) mod utils;
+pub mod vehicle_view;
 
-pub use definition::{DefinitionDocument};
+pub use definition_view::DefinitionDocument;
+pub use vehicle_view::VehicleDocument;
 
 #[cfg(test)]
 mod tests {
-    use crate::definition::{Definition, DefinitionDocument};
+    use crate::definition_view::{Definition, DefinitionDocument};
     use crate::domtree::Element;
     use std::path::Path;
 
@@ -20,7 +23,7 @@ mod tests {
         F: FnOnce(&mut Definition<&mut Element>),
     {
         let mut cd = DefinitionDocument::from_xml_str(input).expect("failed to parse");
-        let mut definition = cd.definition_mut();
+        let mut definition = cd.root_mut();
 
         callback(&mut definition);
 
@@ -43,7 +46,7 @@ mod tests {
             .join("01_block.xml");
 
         let cd = DefinitionDocument::from_file(path).expect("failed to load {path:?}");
-        let definition = cd.definition().expect("failed to get <definition>");
+        let definition = cd.root().expect("failed to get <definition>");
 
         assert_eq!(definition.name(), Ok("Block".to_owned()));
         assert_eq!(definition.category(), Ok(0));

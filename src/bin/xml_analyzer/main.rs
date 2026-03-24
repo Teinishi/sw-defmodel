@@ -6,71 +6,26 @@ mod utils;
 
 use code::write_code;
 use code_rule::{ChildClassificcation, CodeRule, NamePath};
-use node_info::{ChildInfo, ValueType, analyze_files, print_node};
+use node_info::{ChildInfo, NodeInfo, ValueType, analyze_files, print_node};
 use std::{
+    collections::BTreeSet,
+    fmt,
     fs::{self, File},
     io::{self, BufReader, BufWriter, Write},
     path::Path,
 };
 use utils::ls_xml;
 
-use crate::node_info::NodeInfo;
-
-const DEFINE_VEC3I: &str = r#"define_tag! {
-    #[doc = "Represents an element with integer attributes `x`, `y`, and `z`."]
-    struct Vec3i {
-        "x": i32,
-        "y": i32,
-        "z": i32,
-    }
-}
-
-"#;
-
-const DEFINE_VEC3F: &str = r#"define_tag! {
-    #[doc = "Represents an element with float attributes `x`, `y`, and `z`."]
-    struct Vec3f {
-        "x": f32,
-        "y": f32,
-        "z": f32,
-    }
-}
-
-"#;
-
-const DEFINE_COLOR_RGB: &str = r#"define_tag! {
-    #[doc = "Represents an element with int attributes `r`, `g`, and `b`."]
-    struct ColorRGB {
-        "r": u32,
-        "g": u32,
-        "b": u32,
-    }
-}
-
-"#;
-
-const DEFINE_COLOR_RGBA: &str = r#"define_tag! {
-    #[doc = "Represents an element with int attributes `r`, `g`, `b`, and `a`."]
-    struct ColorRGBA {
-        "r": u32,
-        "g": u32,
-        "b": u32,
-        "a": u32,
-    }
-}
-
-"#;
-
 fn main() -> io::Result<()> {
     // test_data/vanilla_definitions 以下を解析
     analyze_and_write(
         "vanilla_definitions",
-        "definition",
+        "definition_view",
         DefinitionRule::default(),
     )?;
 
     // test_data/vehicles 以下を解析
-    analyze_and_write("vehicles", "vehicle", VehicleRule::default())?;
+    analyze_and_write("vehicles", "vehicle_view", VehicleRule::default())?;
 
     Ok(())
 }
@@ -113,8 +68,9 @@ fn analyze_and_write<R: CodeRule>(
     // Rust コードを出力
     let output_path = output_path.with_extension("rs");
     println!("Writing to {output_path:?}");
+    let code = write_code(&node, &mut rule);
     let mut f = BufWriter::new(File::create(output_path)?);
-    write_code(&mut f, &node, &mut rule)?;
+    f.write_all(code.as_bytes())?;
 
     Ok(())
 }
@@ -122,8 +78,7 @@ fn analyze_and_write<R: CodeRule>(
 // <definition> 用の上書きルール
 #[derive(Default, Debug)]
 struct DefinitionRule {
-    vec3i: bool,
-    vec3f: bool,
+    generic_tags: BTreeSet<GenericTag>,
 }
 
 impl CodeRule for DefinitionRule {
@@ -144,38 +99,23 @@ impl CodeRule for DefinitionRule {
             _ => {}
         }
 
-        match is_generic(&info.inner().attributes) {
-            Some(GenericTags::Vec3i) => {
-                self.vec3i = true;
-                Some(ChildClassificcation::unique_inline("Vec3i"))
-            }
-            Some(GenericTags::Vec3f) => {
-                self.vec3f = true;
-                Some(ChildClassificcation::unique_inline("Vec3f"))
-            }
-            _ => None,
+        if let Some(g) = is_generic(&info.inner().attributes) {
+            self.generic_tags.insert(g);
+            Some(ChildClassificcation::unique_inline(g.as_str()))
+        } else {
+            None
         }
     }
 
-    fn finalize<W: io::Write>(&mut self, f: &mut W) -> io::Result<()> {
-        if self.vec3i {
-            write!(f, "{}", DEFINE_VEC3I)?;
-        }
-        if self.vec3f {
-            write!(f, "{}", DEFINE_VEC3F)?;
-        }
-
-        Ok(())
+    fn finalize<W: fmt::Write>(&mut self, f1: &mut W, _f2: &mut W) -> fmt::Result {
+        write_import(f1, &self.generic_tags)
     }
 }
 
 // <vehicle> 用の上書きルール
 #[derive(Default, Debug)]
 struct VehicleRule {
-    vec3i: bool,
-    vec3f: bool,
-    color_rgb: bool,
-    color_rgba: bool,
+    generic_tags: BTreeSet<GenericTag>,
 }
 
 impl CodeRule for VehicleRule {
@@ -200,68 +140,53 @@ impl CodeRule for VehicleRule {
             _ => {}
         }
 
-        match is_generic(&info.inner().attributes) {
-            Some(GenericTags::Vec3i) => {
-                self.vec3i = true;
-                Some(ChildClassificcation::unique_inline("Vec3i"))
-            }
-            Some(GenericTags::Vec3f) => {
-                self.vec3f = true;
-                Some(ChildClassificcation::unique_inline("Vec3f"))
-            }
-            Some(GenericTags::ColorRGB) => {
-                self.color_rgb = true;
-                Some(ChildClassificcation::unique_inline("ColorRGB"))
-            }
-            Some(GenericTags::ColorRGBA) => {
-                self.color_rgba = true;
-                Some(ChildClassificcation::unique_inline("ColorRGBA"))
-            }
-            _ => None,
+        if let Some(g) = is_generic(&info.inner().attributes) {
+            self.generic_tags.insert(g);
+            Some(ChildClassificcation::unique_inline(g.as_str()))
+        } else {
+            None
         }
     }
 
-    fn finalize<W: io::Write>(&mut self, f: &mut W) -> io::Result<()> {
-        if self.vec3i {
-            write!(f, "{}", DEFINE_VEC3I)?;
-        }
-        if self.vec3f {
-            write!(f, "{}", DEFINE_VEC3F)?;
-        }
-        if self.color_rgb {
-            write!(f, "{}", DEFINE_COLOR_RGB)?;
-        }
-        if self.color_rgba {
-            write!(f, "{}", DEFINE_COLOR_RGBA)?;
-        }
-
-        Ok(())
+    fn finalize<W: fmt::Write>(&mut self, f1: &mut W, _f2: &mut W) -> fmt::Result {
+        write_import(f1, &self.generic_tags)
     }
 }
 
-#[derive(Debug)]
-enum GenericTags {
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+enum GenericTag {
     Vec3i,
     Vec3f,
     ColorRGB,
     ColorRGBA,
 }
 
+impl GenericTag {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Vec3i => "Vec3i",
+            Self::Vec3f => "Vec3f",
+            Self::ColorRGB => "ColorRGB",
+            Self::ColorRGBA => "ColorRGBA",
+        }
+    }
+}
+
 fn is_generic(
     attrs: &ordered_map::OrderedMap<String, node_info::AttributeInfo>,
-) -> Option<GenericTags> {
+) -> Option<GenericTag> {
     if (1..=3).contains(&attrs.len())
         && attrs
             .iter()
             .all(|(name, _)| matches!(name.as_str(), "x" | "y" | "z"))
     {
         if attrs.iter().all(|(_, a)| matches!(a.ty(), ValueType::F32)) {
-            return Some(GenericTags::Vec3f);
+            return Some(GenericTag::Vec3f);
         } else if attrs
             .iter()
             .all(|(_, a)| matches!(a.ty(), ValueType::I32 | ValueType::U32))
         {
-            return Some(GenericTags::Vec3i);
+            return Some(GenericTag::Vec3i);
         }
     } else if (1..=4).contains(&attrs.len())
         && attrs.iter().all(|(name, a)| {
@@ -269,10 +194,26 @@ fn is_generic(
         })
     {
         if attrs.iter().any(|(name, _)| name == "a") {
-            return Some(GenericTags::ColorRGBA);
+            return Some(GenericTag::ColorRGBA);
         } else {
-            return Some(GenericTags::ColorRGB);
+            return Some(GenericTag::ColorRGB);
         }
     }
     None
+}
+
+fn write_import<W: fmt::Write>(f: &mut W, generic_tags: &BTreeSet<GenericTag>) -> fmt::Result {
+    if !generic_tags.is_empty() {
+        write!(f, "pub use super::generic_view::{{")?;
+        for (i, g) in generic_tags.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", g.as_str())?;
+        }
+        writeln!(f, "}};")?;
+        writeln!(f)?;
+    }
+
+    Ok(())
 }

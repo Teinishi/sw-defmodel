@@ -1,5 +1,5 @@
 use super::node_info::ChildInfo;
-use std::io;
+use std::fmt;
 
 pub(super) trait CodeRule {
     const TARGET_LABEL: &str;
@@ -14,7 +14,7 @@ pub(super) trait CodeRule {
     }
 
     #[allow(unused_variables)]
-    fn finalize<W: io::Write>(&mut self, f: &mut W) -> io::Result<()> {
+    fn finalize<W: fmt::Write>(&mut self, f1: &mut W, f2: &mut W) -> fmt::Result {
         Ok(())
     }
 }
@@ -29,7 +29,6 @@ impl NamePath {
         Self { path: vec![name] }
     }
 
-    #[expect(dead_code)]
     pub(super) fn as_slice(&self) -> &[String] {
         &self.path
     }

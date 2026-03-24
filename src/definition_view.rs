@@ -1,3 +1,5 @@
+pub use super::generic_view::{Vec3i, Vec3f};
+
 define_root! {
     #[doc = "Represents component definition files."]
     struct DefinitionDocument {
@@ -180,8 +182,8 @@ define_lists!(Definition {
     <logic_nodes>: [<logic_node>: LogicNode],
     <couplings>: [<coupling>: Coupling],
     <voxels>: [<voxel>: Voxel],
-    <jet_engine_connections_prev>: [<j>: J],
-    <jet_engine_connections_next>: [<j>: J],
+    <jet_engine_connections_prev>: [<j>: JetEngineConnectionsPrevJ],
+    <jet_engine_connections_next>: [<j>: JetEngineConnectionsPrevJ],
 });
 
 define_tag! {
@@ -323,9 +325,9 @@ define_tag! {
 
 define_tag! {
     #[doc = "Represents `<j>` tag in component definition files."]
-    struct J {}
+    struct JetEngineConnectionsPrevJ {}
 }
-define_unique_children!(J {
+define_unique_children!(JetEngineConnectionsPrevJ {
     <pos>: Vec3i,
     <normal>: Vec3i,
 });
@@ -361,24 +363,6 @@ define_tag! {
     #[doc = "Represents `<rope_hook_offset>` tag in component definition files."]
     struct RopeHookOffset {
         "x": u32,
-        "y": f32,
-        "z": f32,
-    }
-}
-
-define_tag! {
-    #[doc = "Represents an element with integer attributes `x`, `y`, and `z`."]
-    struct Vec3i {
-        "x": i32,
-        "y": i32,
-        "z": i32,
-    }
-}
-
-define_tag! {
-    #[doc = "Represents an element with float attributes `x`, `y`, and `z`."]
-    struct Vec3f {
-        "x": f32,
         "y": f32,
         "z": f32,
     }

@@ -5,8 +5,8 @@ use super::{
 use heck::{ToSnakeCase as _, ToUpperCamelCase as _};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fmt::{self, Write as _},
     hash::Hash,
-    io,
 };
 
 // Rust で識別子に使用できないキーワードのリスト
@@ -30,11 +30,10 @@ fn to_snake_ident(val: &str, fix: &str) -> String {
     v
 }
 
-pub(super) fn write_code<W: io::Write, R: CodeRule>(
-    f: &mut W,
-    node: &NodeInfo,
-    rule: &mut R,
-) -> io::Result<()> {
+pub(super) fn write_code<R: CodeRule>(node: &NodeInfo, rule: &mut R) -> String {
+    let mut f1 = String::new();
+    let mut f2 = String::new();
+
     let mut nodes = BTreeMap::new();
     let mut reg = NameRegistory::default();
     let root_id = create_node_definitions(
@@ -77,23 +76,26 @@ pub(super) fn write_code<W: io::Write, R: CodeRule>(
 
     // ドキュメントの定義を書く
     let root_name = names.get(&root_id).unwrap();
-    writeln!(f, "define_root! {{")?;
-    writeln!(f, "    #[doc = \"Represents {}.\"]", R::TARGET_LABEL)?;
-    writeln!(f, "    struct {}Document {{", root_name)?;
-    writeln!(f, "        <{}> => {}", node.name, root_name)?;
-    writeln!(f, "    }}")?;
-    writeln!(f, "}}")?;
-    writeln!(f)?;
+    writeln!(&mut f2, "define_root! {{").unwrap();
+    writeln!(&mut f2, "    #[doc = \"Represents {}.\"]", R::TARGET_LABEL).unwrap();
+    writeln!(&mut f2, "    struct {}Document {{", root_name).unwrap();
+    writeln!(&mut f2, "        <{}> => {}", node.name, root_name).unwrap();
+    writeln!(&mut f2, "    }}").unwrap();
+    writeln!(&mut f2, "}}").unwrap();
+    writeln!(&mut f2).unwrap();
 
     // 各要素の定義マクロを書く
     for node_def in nodes.values() {
-        node_def.write_code(f, R::TARGET_LABEL, &names)?;
-        writeln!(f)?;
+        node_def
+            .write_code(&mut f2, R::TARGET_LABEL, &names)
+            .unwrap();
+        writeln!(&mut f2).unwrap();
     }
 
-    rule.finalize(f)?;
+    rule.finalize(&mut f1, &mut f2).unwrap();
 
-    Ok(())
+    f1.push_str(&f2);
+    f1
 }
 
 fn create_node_definitions<R: CodeRule>(
@@ -210,6 +212,10 @@ impl NameRegistory {
             .map(|(id, name_path)| {
                 let len = name_path.len();
                 'size: for size in 1..len {
+                    // 1文字の要素が先頭に来ないように
+                    if name_path.as_slice()[len - size].len() <= 1 {
+                        continue;
+                    }
                     let s = name_path.tail(size);
                     for (i, other) in self.name_paths.iter() {
                         if i != id && other.tail(size) == s {
@@ -275,13 +281,26 @@ struct NodeDefinition {
 }
 
 impl NodeDefinition {
-    fn write_code<W: io::Write>(
+    fn write_code<W: fmt::Write>(
         &self,
         f: &mut W,
         target_label: &str,
         names: &BTreeMap<usize, String>,
-    ) -> io::Result<()> {
+    ) -> fmt::Result {
         let struct_name = names.get(&self.name_id).unwrap();
+
+        // 属性と子要素で名前が被った場合の処理
+        let mut name_count: HashMap<&String, usize> =
+            HashMap::with_capacity(self.attributes.len() + self.children.len() + self.lists.len());
+        for attr in &self.attributes {
+            *name_count.entry(&attr.name).or_insert(0) += 1;
+        }
+        for child in &self.children {
+            *name_count.entry(&child.name).or_insert(0) += 1;
+        }
+        for list in &self.lists {
+            *name_count.entry(&list.list_name).or_insert(0) += 1;
+        }
 
         // 属性定義
         writeln!(f, "define_tag! {{")?;
@@ -290,14 +309,23 @@ impl NodeDefinition {
             "    #[doc = \"Represents `<{}>` tag in {target_label}.\"]",
             self.xml_name,
         )?;
+        if self.attributes.is_empty() && self.children.is_empty() && self.lists.is_empty() {
+            writeln!(f, "    #[expect(dead_code)]")?;
+        }
         write!(f, "    struct {struct_name} {{")?;
         if !self.attributes.is_empty() {
             write!(f, "\n    ")?;
         }
         for attr in &self.attributes {
+            let name = if name_count.get(&attr.name).is_some_and(|c| *c > 1) {
+                &format!("{}_attr", attr.name)
+            } else {
+                &attr.name
+            };
+
             write!(f, "    {:?}", attr.xml_name)?;
-            if attr.xml_name != attr.name {
-                write!(f, " => {}", attr.name)?;
+            if &attr.xml_name != name {
+                write!(f, " => {}", name)?;
             }
             write!(f, ": {},\n    ", attr.ty.as_str())?;
         }
@@ -308,9 +336,15 @@ impl NodeDefinition {
         if !self.children.is_empty() {
             writeln!(f, "define_unique_children!({struct_name} {{")?;
             for child in &self.children {
+                let name = if name_count.get(&child.name).is_some_and(|c| *c > 1) {
+                    &format!("{}_el", child.name)
+                } else {
+                    &child.name
+                };
+
                 write!(f, "    <{}>", child.xml_name)?;
-                if child.xml_name != child.name {
-                    write!(f, "=> {}", child.name)?;
+                if &child.xml_name != name {
+                    write!(f, " => {}", name)?;
                 }
                 writeln!(f, ": {},", type_str(&child.ty, names))?;
             }
@@ -321,9 +355,15 @@ impl NodeDefinition {
         if !self.lists.is_empty() {
             writeln!(f, "define_lists!({struct_name} {{")?;
             for list in &self.lists {
+                let name = if name_count.get(&list.list_name).is_some_and(|c| *c > 1) {
+                    &format!("{}_list", list.list_name)
+                } else {
+                    &list.list_name
+                };
+
                 write!(f, "    <{}>", list.list_xml_name)?;
-                if list.list_xml_name != list.list_name {
-                    write!(f, " => {}", list.list_name)?;
+                if &list.list_xml_name != name {
+                    write!(f, " => {}", name)?;
                 }
                 writeln!(
                     f,
