@@ -38,6 +38,29 @@ const DEFINE_VEC3F: &str = r#"define_tag! {
 
 "#;
 
+const DEFINE_COLOR_RGB: &str = r#"define_tag! {
+    #[doc = "Represents an element with int attributes `r`, `g`, and `b`."]
+    struct ColorRGB {
+        "r": u32,
+        "g": u32,
+        "b": u32,
+    }
+}
+
+"#;
+
+const DEFINE_COLOR_RGBA: &str = r#"define_tag! {
+    #[doc = "Represents an element with int attributes `r`, `g`, `b`, and `a`."]
+    struct ColorRGBA {
+        "r": u32,
+        "g": u32,
+        "b": u32,
+        "a": u32,
+    }
+}
+
+"#;
+
 fn main() -> io::Result<()> {
     // test_data/vanilla_definitions 以下を解析
     analyze_and_write(
@@ -47,7 +70,7 @@ fn main() -> io::Result<()> {
     )?;
 
     // test_data/vehicles 以下を解析
-    analyze_and_write("vehicles", "vehicle", VehicleRule)?;
+    analyze_and_write("vehicles", "vehicle", VehicleRule::default())?;
 
     Ok(())
 }
@@ -121,26 +144,17 @@ impl CodeRule for DefinitionRule {
             _ => {}
         }
 
-        let attrs = &info.inner().attributes;
-        let n = attrs.len();
-        if (1..=3).contains(&n)
-            && attrs
-                .iter()
-                .all(|(name, _)| matches!(name.as_str(), "x" | "y" | "z"))
-        {
-            if attrs.iter().all(|(_, a)| matches!(a.ty(), ValueType::F32)) {
+        match is_generic(&info.inner().attributes) {
+            Some(GenericTags::Vec3i) => {
                 self.vec3i = true;
-                return Some(ChildClassificcation::unique_inline("Vec3f"));
-            } else if attrs
-                .iter()
-                .all(|(_, a)| matches!(a.ty(), ValueType::I32 | ValueType::U32))
-            {
-                self.vec3f = true;
-                return Some(ChildClassificcation::unique_inline("Vec3i"));
+                Some(ChildClassificcation::unique_inline("Vec3i"))
             }
+            Some(GenericTags::Vec3f) => {
+                self.vec3f = true;
+                Some(ChildClassificcation::unique_inline("Vec3f"))
+            }
+            _ => None,
         }
-
-        None
     }
 
     fn finalize<W: io::Write>(&mut self, f: &mut W) -> io::Result<()> {
@@ -157,7 +171,12 @@ impl CodeRule for DefinitionRule {
 
 // <vehicle> 用の上書きルール
 #[derive(Default, Debug)]
-struct VehicleRule;
+struct VehicleRule {
+    vec3i: bool,
+    vec3f: bool,
+    color_rgb: bool,
+    color_rgba: bool,
+}
 
 impl CodeRule for VehicleRule {
     const TARGET_LABEL: &str = "vehicle files";
@@ -165,19 +184,95 @@ impl CodeRule for VehicleRule {
     fn override_child(
         &mut self,
         path: &NamePath,
-        _info: &ChildInfo,
+        info: &ChildInfo,
     ) -> Option<ChildClassificcation> {
         match path.join_str("/").as_str() {
-            "vehicle/bodies/body/components/c/o/microprocessor_definition/group/components/c/object/out1" => {
-                Some(ChildClassificcation::unique())
+            "vehicle/bodies/body/components/c/o/microprocessor_definition/group/components/c/object/out1" =>
+            {
+                return Some(ChildClassificcation::unique());
             }
             "vehicle/bodies/body/components/c/o/display_1/col_extra/c"
             | "vehicle/bodies/body/components/c/o/display_2/col_extra/c"
             | "vehicle/bodies/body/components/c/o/display_3/col_extra/c"
             | "vehicle/bodies/body/components/c/o/display_4/col_extra/c" => {
-                Some(ChildClassificcation::list())
+                return Some(ChildClassificcation::list());
+            }
+            _ => {}
+        }
+
+        match is_generic(&info.inner().attributes) {
+            Some(GenericTags::Vec3i) => {
+                self.vec3i = true;
+                Some(ChildClassificcation::unique_inline("Vec3i"))
+            }
+            Some(GenericTags::Vec3f) => {
+                self.vec3f = true;
+                Some(ChildClassificcation::unique_inline("Vec3f"))
+            }
+            Some(GenericTags::ColorRGB) => {
+                self.color_rgb = true;
+                Some(ChildClassificcation::unique_inline("ColorRGB"))
+            }
+            Some(GenericTags::ColorRGBA) => {
+                self.color_rgba = true;
+                Some(ChildClassificcation::unique_inline("ColorRGBA"))
             }
             _ => None,
         }
     }
+
+    fn finalize<W: io::Write>(&mut self, f: &mut W) -> io::Result<()> {
+        if self.vec3i {
+            write!(f, "{}", DEFINE_VEC3I)?;
+        }
+        if self.vec3f {
+            write!(f, "{}", DEFINE_VEC3F)?;
+        }
+        if self.color_rgb {
+            write!(f, "{}", DEFINE_COLOR_RGB)?;
+        }
+        if self.color_rgba {
+            write!(f, "{}", DEFINE_COLOR_RGBA)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+enum GenericTags {
+    Vec3i,
+    Vec3f,
+    ColorRGB,
+    ColorRGBA,
+}
+
+fn is_generic(
+    attrs: &ordered_map::OrderedMap<String, node_info::AttributeInfo>,
+) -> Option<GenericTags> {
+    if (1..=3).contains(&attrs.len())
+        && attrs
+            .iter()
+            .all(|(name, _)| matches!(name.as_str(), "x" | "y" | "z"))
+    {
+        if attrs.iter().all(|(_, a)| matches!(a.ty(), ValueType::F32)) {
+            return Some(GenericTags::Vec3f);
+        } else if attrs
+            .iter()
+            .all(|(_, a)| matches!(a.ty(), ValueType::I32 | ValueType::U32))
+        {
+            return Some(GenericTags::Vec3i);
+        }
+    } else if (1..=4).contains(&attrs.len())
+        && attrs.iter().all(|(name, a)| {
+            matches!(name.as_str(), "r" | "g" | "b" | "a") && matches!(a.ty(), ValueType::U32)
+        })
+    {
+        if attrs.iter().any(|(name, _)| name == "a") {
+            return Some(GenericTags::ColorRGBA);
+        } else {
+            return Some(GenericTags::ColorRGB);
+        }
+    }
+    None
 }
